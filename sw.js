@@ -1,5 +1,5 @@
-const CACHE = 'daily-habits-v4';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './news.js', './words.js', './manifest.webmanifest',
+const CACHE = 'daily-habits-v5';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './news.js', './words.js', './travel.js', './travel-prices.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

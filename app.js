@@ -86,6 +86,7 @@
       log: {},
       timers: {},
       vocab: { days: {}, next: 0, words: {} },
+      travel: { origin: '', people: 2, nights: 7, shift: 0 },
       nextColor: 3,
     };
   }
@@ -98,6 +99,7 @@
     s.timers = s.timers || {};
     s.vocab = s.vocab && s.vocab.days ? s.vocab : { days: {}, next: 0, words: {} };
     s.vocab.words = s.vocab.words || {};
+    s.travel = Object.assign({ origin: '', people: 2, nights: 7, shift: 0 }, s.travel || {});
     if (typeof s.nextColor !== 'number') s.nextColor = s.habits.length % COLORS.length;
     return s;
   }
@@ -155,6 +157,7 @@
       s.vocab.days[addDays(t, -i)] = { g: 4 - i, known };
     }
     s.vocab.next = 4;
+    s.travel.origin = 'SHA';
     (window.WORD_DAYS || []).slice(0, 4).forEach((L, gi) => L.words.forEach((w, k) => {
       s.vocab.words[w[0]] = { box: k % 4 === 0 ? 0 : 1 + (k % 3), right: 1 + (k % 3), wrong: k % 4 === 0 ? 1 : 0, last: addDays(t, -(4 - gi)) };
     }));
@@ -236,6 +239,7 @@
   if (hashView.includes('month')) ui.trend = 'month';
   if (hashView.includes('settings')) ui.view = 'settings';
   if (hashView.includes('vocab')) ui.view = 'vocab';
+  if (hashView.includes('travel')) ui.view = 'travel';
 
   // ---------- rings ----------
   function ring(key, p, color, cx, r, sw, track) {
@@ -259,7 +263,7 @@
     document.documentElement.dataset.font = S.settings.font === 'xl' ? 'xl' : 'large';
     animIndex = 0;
     const main = $('#main');
-    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'vocab' ? viewVocab() : ui.view === 'trends' ? viewTrends() : viewSettings();
+    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'vocab' ? viewVocab() : ui.view === 'travel' ? viewTravel() : ui.view === 'trends' ? viewTrends() : viewSettings();
     main.classList.toggle('enter', ui.enter && !reduced);
     ui.enter = false;
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === ui.view));
@@ -298,12 +302,17 @@
   }
 
   // ---------- 睿睿 (the little helper) ----------
-  function ruiSVG(extra = '') {
+  function ruiSVG(extra = '', mood = '') {
+    const travel = mood === 'travel';
     return `<svg class="rui ${extra}" viewBox="0 0 120 142" aria-hidden="true">
       <ellipse cx="60" cy="137" rx="30" ry="4.5" fill="#000" opacity=".08"/>
-      <path d="M28 134 Q28 99 60 99 Q92 99 92 134 Z" fill="#2a78d6"/>
+      <path d="M28 134 Q28 99 60 99 Q92 99 92 134 Z" fill="${travel ? '#24407a' : '#2a78d6'}"/>
       <path d="M49 100 L60 113 L71 100 Z" fill="#fff"/>
-      <circle cx="60" cy="121" r="3" fill="#fff" opacity=".85"/>
+      ${travel ? `<path d="M52 103 L60 107 L52 111 Z M68 103 L60 107 L68 111 Z" fill="#e34948"/><circle cx="60" cy="107" r="2.4" fill="#c43535"/>
+        <circle cx="60" cy="121" r="2.2" fill="#f2c14e"/><circle cx="60" cy="129" r="2.2" fill="#f2c14e"/>
+        <g transform="rotate(-6 22 124)"><rect x="8" y="112" width="26" height="22" rx="5" fill="#eb6834"/><rect x="16" y="106" width="10" height="7" rx="3" fill="none" stroke="#a8401a" stroke-width="2.5"/>
+        <rect x="8" y="120" width="26" height="3" fill="#ffd27a"/><circle cx="14" cy="129" r="2.6" fill="#fff" opacity=".85"/><circle cx="28" cy="116" r="2" fill="#2a78d6"/></g>`
+        : '<circle cx="60" cy="121" r="3" fill="#fff" opacity=".85"/>'}
       <path d="M33 111 Q22 119 26 130" stroke="#ffd9b8" stroke-width="9" stroke-linecap="round" fill="none"/>
       <g class="arm"><path d="M87 109 Q103 101 105 85" stroke="#ffd9b8" stroke-width="9" stroke-linecap="round" fill="none"/>
         <circle cx="105" cy="83" r="6.5" fill="#ffd9b8"/></g>
@@ -319,6 +328,9 @@
         <path d="M56.5 60 Q60 57 63.5 60" stroke="#3a3a3a" stroke-width="3" fill="none"/>
         <ellipse cx="37" cy="77" rx="6" ry="3.5" fill="#ff9a9a" opacity=".6"/><ellipse cx="83" cy="77" rx="6" ry="3.5" fill="#ff9a9a" opacity=".6"/>
         <path class="mouth" d="M51 79 Q60 88 69 79" stroke="#8a3a2a" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+        ${travel ? `<path d="M20 40 Q22 12 60 10 Q98 12 100 40 Z" fill="#24407a"/><rect x="18" y="36" width="84" height="7" rx="3.5" fill="#1b3160"/>
+          <path d="M14 42 Q60 54 106 42 L104 47 Q60 58 16 47 Z" fill="#14264d"/>
+          <circle cx="60" cy="25" r="6" fill="#f2c14e"/><path d="M56 25 l3 3 5-6" stroke="#24407a" stroke-width="1.8" fill="none" stroke-linecap="round"/>` : ''}
       </g>
     </svg>`;
   }
@@ -356,6 +368,10 @@
       const f = flowersOn(todayKey()), total = totalFlowers(), lv = levelOf(total);
       return `今天得到 ${f} 朵小红花 🌸，一共 ${total} 朵，现在是「${lv.name}」${lv.icon}` +
         (lv.next ? `，再 ${lv.next.at - total} 朵就升级啦！` : '，已经是最高级啦！');
+    }
+    if (S.travel.origin && Math.random() < 0.25) {
+      const r = rankPlans();
+      if (r.plans[0]) return `旅行管家睿睿推荐：${r.month} 月去「${r.plans[0].d.name}」度假，${r.dates.nights} 晚两个人约 ${money(r.plans[0].total)}，去「旅行」看看 🧳`;
     }
     const v = WD.length ? vocabDay(todayKey(), true) : null;
     if (v && Math.random() < 0.5) {
@@ -775,6 +791,211 @@
     }
     if (a === 'close') { fc = null; renderCard(); if (ui.view === 'vocab') render(); }
   });
+
+  // ---------- 旅行管家 ----------
+  const TR = window.TRAVEL || { origins: [], dests: [], springFestival: [] };
+  const NIGHT_OPTIONS = [7, 10, 14];
+
+  function haversine(a, b) {
+    const r = Math.PI / 180, dLat = (b.lat - a.lat) * r, dLng = (b.lng - a.lng) * r;
+    const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLng / 2) ** 2;
+    return 12742 * Math.asin(Math.sqrt(h));
+  }
+
+  // Busy windows to stay clear of: Spring Festival rush, Qingming, May Day, National Day.
+  function busyWindows(year) {
+    const w = [[`${year}-04-03`, `${year}-04-06`], [`${year}-04-28`, `${year}-05-06`], [`${year}-09-28`, `${year}-10-08`]];
+    TR.springFestival.forEach(d => w.push([addDays(d, -12), addDays(d, 14)]));
+    return w;
+  }
+
+  function planDates() {
+    const nights = S.travel.nights, t = todayKey();
+    const nextTue = k => { while (parseKey(k).getDay() !== 2) k = addDays(k, 1); return k; };
+    const prevTue = k => { while (parseKey(k).getDay() !== 2) k = addDays(k, -1); return k; };
+    const clash = k => {
+      const end = addDays(k, nights), y = +k.slice(0, 4);
+      return [...busyWindows(y - 1), ...busyWindows(y), ...busyWindows(y + 1)].find(([a, b]) => k <= b && end >= a);
+    };
+    // Base suggestion: the first clear Tuesday about three months out.
+    let start = nextTue(addDays(t, 90)), moved = false;
+    for (let g = 0, hit; g < 8 && (hit = clash(start)); g++) { start = nextTue(addDays(hit[1], 1)); moved = true; }
+    // "早一周 / 晚一周" moves from there, jumping over any holiday rush in that direction.
+    for (let i = 0; i < Math.abs(S.travel.shift); i++) {
+      const dir = Math.sign(S.travel.shift);
+      let next = addDays(start, 7 * dir);
+      for (let g = 0, hit; g < 8 && (hit = clash(next)); g++) {
+        next = dir > 0 ? nextTue(addDays(hit[1], 1)) : prevTue(addDays(hit[0], -nights - 1));
+      }
+      if (next < addDays(t, 14)) break;
+      start = next;
+    }
+    const why = moved && !S.travel.shift ? '避开春节等节假日高峰，价格更划算' : '周二出发，机票通常比周末便宜';
+    return { start, end: addDays(start, nights), nights, why };
+  }
+
+  function comfort(t) {
+    if (t >= 20 && t <= 28) return 5;
+    if ((t >= 17 && t <= 19) || (t >= 29 && t <= 30)) return 4;
+    if ((t >= 14 && t <= 16) || t === 31) return 3;
+    if ((t >= 10 && t <= 13) || t === 32) return 2;
+    return 1;
+  }
+
+  function scoreDest(d, month) {
+    let s = comfort(d.temp[month - 1]);
+    if (d.bonus.includes(month)) s += 1;
+    if (d.rain.includes(month)) s -= 1;
+    return Math.max(1, Math.min(5, s));
+  }
+
+  const round50 = x => Math.round(x / 50) * 50;
+
+  function priceFor(d, origin, dates) {
+    const month = +dates.start.slice(5, 7), peak = d.peak.includes(month);
+    const km = haversine(origin, d), people = S.travel.people;
+    const live = window.TRAVEL_PRICES && window.TRAVEL_PRICES.routes && window.TRAVEL_PRICES.routes[`${origin.code}-${d.code}`];
+    let travel, mode;
+    if (km < 450) {
+      mode = 'rail';
+      travel = round50(Math.max(120, km * 0.5) * 2);
+    } else if (live && live.price) {
+      mode = 'live';
+      travel = live.price;
+    } else {
+      mode = 'est';
+      travel = round50(Math.max(350, km * 0.45) * (peak ? 1.4 : 1) * 2);
+    }
+    const hotel = peak ? d.hotel[1] : d.hotel[0];
+    const total = travel * people + hotel * dates.nights * (people > 2 ? 2 : 1) + d.daily * (people / 2) * (dates.nights + 1);
+    return { km, mode, travel, hotel, total: round50(total), peak, live };
+  }
+
+  function rankPlans() {
+    const origin = TR.origins.find(o => o.code === S.travel.origin);
+    if (!origin) return { origin: null, plans: [] };
+    const dates = planDates(), month = +dates.start.slice(5, 7);
+    const plans = TR.dests.filter(d => haversine(origin, d) > 120).map(d => {
+      const score = scoreDest(d, month), p = priceFor(d, origin, dates);
+      return Object.assign({ d, score, value: Math.pow(score, 2.2) / p.total }, p);
+    }).filter(p => p.score >= 3).sort((a, b) => b.value - a.value).slice(0, 6);
+    return { origin, dates, month, plans };
+  }
+
+  const ctripFlight = (o, d, dates) => `https://flights.ctrip.com/online/list/round-${o.code.toLowerCase()}-${d.code.toLowerCase()}?depdate=${dates.start}_${dates.end}`;
+  const ctripHotel = (d, dates) => `https://hotels.ctrip.com/hotels/list?keyword=${encodeURIComponent(d.name.split('·')[0])}&checkin=${dates.start}&checkout=${dates.end}`;
+  const fmtLong = k => { const d = parseKey(k); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日（周${WEEK[d.getDay()]}）`; };
+  const money = n => '¥' + Math.round(n).toLocaleString('en-US');
+
+  function travelLine(r) {
+    const n = callName();
+    if (!r.origin) return `我是旅行管家睿睿 🧳 先告诉我${n}从哪个城市出发，我来挑最划算的度假地！`;
+    const top = r.plans[0];
+    if (!top) return '这个时间段暂时没有特别合适的度假地，换个日子试试？';
+    return `${n}，3 个月后正好是 ${r.month} 月。睿睿算过了，最划算的是「${top.d.name}」：${top.d.temp[r.month - 1]}°C 左右，${r.dates.nights} 晚两个人大约 ${money(top.total)} 🧳`;
+  }
+
+  function sparkline(hist) {
+    if (!hist || hist.length < 2) return '';
+    const vals = hist.map(h => h.p), max = Math.max(...vals), min = Math.min(...vals), W = 120, H = 30;
+    const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * W},${H - 4 - (max === min ? 0.5 : (v - min) / (max - min)) * (H - 8)}`).join(' ');
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="#2a78d6" stroke-width="2" stroke-linejoin="round"/></svg>`;
+  }
+
+  function liveNote(p) {
+    const h = p.live && p.live.history;
+    if (!h || h.length < 2) return '';
+    const diff = h[h.length - 1].p - h[h.length - 2].p, low = Math.min(...h.map(x => x.p));
+    if (h[h.length - 1].p <= low && h.length >= 5) return '<span class="price-tag good">📉 最近最低价，可以考虑下手</span>';
+    if (diff < 0) return `<span class="price-tag good">比昨天便宜 ${money(-diff)}</span>`;
+    if (diff > 0) return `<span class="price-tag up">比昨天贵 ${money(diff)}</span>`;
+    return '<span class="price-tag">和昨天一样</span>';
+  }
+
+  function viewTravel() {
+    const r = rankPlans();
+    let html = `<header class="page-head"><h1>🧳 旅行管家</h1><p>帮你挑 3 个月后国内最划算的度假地</p></header>
+      <section class="card rui-card ${A()}">
+        <div class="rui-row">
+          <div class="rui-btn">${ruiSVG('', 'travel')}</div>
+          <div class="bubble"><div class="bubble-text">${esc(travelLine(r))}</div></div>
+        </div>
+      </section>`;
+    html += `<section class="card ${A()}">
+      <div class="card-title">🛫 从哪里出发</div>
+      <select class="text-input city-select" id="tr-origin" aria-label="出发城市">
+        <option value="">点这里选出发城市</option>
+        ${TR.origins.map(o => `<option value="${o.code}" ${o.code === S.travel.origin ? 'selected' : ''}>${o.name}</option>`).join('')}
+      </select>
+      <div class="tr-opts">
+        <div><div class="set-desc">几个人</div><div class="seg small-seg">${[1, 2, 3, 4].map(n => `<button class="${S.travel.people === n ? 'on' : ''}" data-action="tr-people" data-n="${n}">${n}人</button>`).join('')}</div></div>
+        <div><div class="set-desc">住多久</div><div class="seg small-seg">${NIGHT_OPTIONS.map(n => `<button class="${S.travel.nights === n ? 'on' : ''}" data-action="tr-nights" data-n="${n}">${n === 7 ? '一周' : n === 10 ? '十天' : '半个月'}</button>`).join('')}</div></div>
+      </div>
+    </section>`;
+    if (!r.origin) return html;
+    html += `<section class="card tr-dates ${A()}">
+      <div class="card-title">📅 建议出发</div>
+      <div class="tr-date-big">${fmtLong(r.dates.start)}</div>
+      <div class="card-sub">住 ${r.dates.nights} 晚，${fmtLong(r.dates.end)} 回来 · ${r.dates.why}</div>
+      <div class="quick" style="margin-top:12px">
+        <button class="btn btn-outline" data-action="tr-shift" data-n="-1">‹ 早一周</button>
+        <button class="btn btn-outline" data-action="tr-shift" data-n="1">晚一周 ›</button>
+      </div>
+    </section>`;
+    const liveUpdated = window.TRAVEL_PRICES && window.TRAVEL_PRICES.updated;
+    html += `<h2 class="sec-title ${A()}">🏆 性价比排行<span class="sec-note">${liveUpdated ? `机票 ${fmtDate(liveUpdated)} 更新` : '参考价'}</span></h2>`;
+    if (!r.plans.length) html += emptyCard('🧳', '这段时间没有特别合适的地方', '点「早一周 / 晚一周」换个日子看看', '晚一周', 'tr-shift');
+    r.plans.forEach((p, i) => {
+      const d = p.d, m = r.month;
+      const travelLabel = p.mode === 'rail' ? '高铁往返约' : p.mode === 'live' ? '机票往返最低' : '机票往返约';
+      html += `<section class="card plan-card ${i === 0 ? 'top' : ''} ${A()}">
+        <div class="plan-head">
+          <span class="plan-rank">${i === 0 ? '🥇 性价比第1' : `第 ${i + 1}`}</span>
+          <span class="plan-stars" aria-label="适合度 ${p.score} 星">${'★'.repeat(p.score)}<i>${'★'.repeat(5 - p.score)}</i></span>
+        </div>
+        <div class="plan-title"><span class="plan-emoji">${d.emoji}</span><div><div class="plan-name">${d.name}<small> · ${d.area}</small></div>
+          <div class="card-sub">${esc(d.tagline)}</div></div></div>
+        <div class="plan-facts">
+          <span>🌡️ ${m}月 约 ${d.temp[m - 1]}°C</span>
+          ${d.rain.includes(m) ? '<span>☔ 雨水偏多</span>' : '<span>☀️ 天气不错</span>'}
+          ${p.peak ? '<span>🔥 旺季</span>' : '<span>💰 淡季价</span>'}
+          ${d.altitude >= 1500 ? `<span>⛰️ 海拔约 ${d.altitude} 米</span>` : ''}
+        </div>
+        <div class="plan-total"><div><div class="set-desc">${S.travel.people} 人 · ${r.dates.nights} 晚 · 预计总花费</div>
+          <div class="plan-money">${money(p.total)}</div></div>${p.live ? sparkline(p.live.history) : ''}</div>
+        <div class="plan-break">
+          <div>${p.mode === 'rail' ? '🚄' : '✈️'} ${travelLabel} <b>${money(p.travel)}</b>/人 ${p.mode === 'live' ? liveNote(p) : ''}</div>
+          <div>🏨 酒店约 <b>${money(p.hotel)}</b>/晚</div>
+          <div>🍜 吃饭和市内交通约 <b>${money(d.daily)}</b>/天（两人）</div>
+        </div>
+        <div class="fc-chips" style="margin-top:10px">${d.perks.map(x => `<span class="perk">✓ ${esc(x)}</span>`).join('')}</div>
+        ${d.altitude >= 1500 ? '<div class="card-sub" style="margin-top:8px">⚠️ 有高血压、心脏病的，出发前问问医生能不能去高海拔地区</div>' : ''}
+        <div class="quick" style="margin-top:12px">
+          ${p.mode === 'rail' ? '' : `<a class="btn btn-primary" href="${ctripFlight(r.origin, d, r.dates)}" target="_blank" rel="noopener">✈️ 携程查机票</a>`}
+          <a class="btn btn-soft" href="${ctripHotel(d, r.dates)}" target="_blank" rel="noopener">🏨 携程查酒店</a>
+        </div>
+        <button class="btn btn-outline btn-wide" style="margin-top:10px" data-action="tr-plan" data-id="${d.id}">📋 看看这一周怎么玩</button>
+      </section>`;
+    });
+    html += `<p class="foot-note">${liveUpdated ? '机票价格每天自动更新；' : ''}酒店和${liveUpdated ? '' : '机票'}价格是按往年淡旺季估的参考价，实际以携程为准</p>`;
+    return html;
+  }
+
+  function openPlan(id) {
+    const r = rankPlans(), p = r.plans.find(x => x.d.id === id) || null, d = p ? p.d : TR.dests.find(x => x.id === id);
+    if (!d || !r.origin) return;
+    const days = Array.from({ length: r.dates.nights + 1 }, (_, i) => {
+      const k = addDays(r.dates.start, i), last = i === r.dates.nights;
+      const text = last ? d.plan[d.plan.length - 1] : i < d.plan.length - 1 ? d.plan[i] : '自由安排：睡到自然醒，附近散散步、吃点好吃的';
+      return `<div class="detail-row day-row"><span class="day-badge">第${i + 1}天</span><div><div class="card-sub">${fmtDate(k)} 周${weekdayOf(k)}</div>${esc(text)}</div></div>`;
+    }).join('');
+    openModal({
+      title: `${d.emoji} ${d.name} ${r.dates.nights} 晚慢游`,
+      body: `<p>住在一个地方，每天只安排一两件事，不赶路、不累。</p><div class="detail-list" style="margin-top:10px">${days}</div>
+        <p class="card-sub" style="margin-top:12px">🧳 睿睿提醒：带好常用药和医保卡，出门前看看天气预报。</p>`,
+      actions: [{ label: '好的' }],
+    });
+  }
 
   // ---------- today ----------
   function viewToday() {
@@ -1595,6 +1816,10 @@
       case 'tip': toast(el.dataset.tip); break;
       case 'say-en': speak(el.dataset.text, 'en-US'); break;
       case 'cards': startCards(el.dataset.kind); break;
+      case 'tr-people': S.travel.people = +el.dataset.n; save(); render(); break;
+      case 'tr-nights': S.travel.nights = +el.dataset.n; save(); render(); break;
+      case 'tr-shift': S.travel.shift = Math.max(-8, Math.min(8, S.travel.shift + (+el.dataset.n || 1))); save(); render(); break;
+      case 'tr-plan': openPlan(el.dataset.id); break;
       case 'word-known': toggleWord(el.dataset.word); break;
       case 'vocab-quiz': ui.vocabQuiz = !ui.vocabQuiz; render(); break;
       case 'reveal': { const c = el.closest('.word-card'); if (c) { c.classList.toggle('revealed'); el.textContent = c.classList.contains('revealed') ? '🙈 遮起来' : '👀 看看中文'; } break; }
@@ -1638,6 +1863,8 @@
   document.addEventListener('change', e => {
     if (e.target.id === 'set-name') {
       S.settings.name = e.target.value.trim().slice(0, 12); save(); toast('已保存称呼');
+    } else if (e.target.id === 'tr-origin') {
+      S.travel.origin = e.target.value; save(); render();
     } else if (e.target.id === 'import-file') {
       importData(e.target.files[0]); e.target.value = '';
     }

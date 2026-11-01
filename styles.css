@@ -212,6 +212,37 @@ input { font: inherit; }
 @keyframes cardIn { from { transform: translateY(30px) scale(.94); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
 
+/* ---------- travel ---------- */
+.tab { font-size: .8rem; }
+.city-select { font-size: 1.15rem; font-weight: 800; -webkit-appearance: none; appearance: none;
+  background: #fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9'%3E%3Cpath d='M1 1l6 6 6-6' stroke='%23706c64' stroke-width='2' fill='none'/%3E%3C/svg%3E") no-repeat right 16px center; }
+.tr-opts { display: grid; gap: 12px; margin-top: 14px; }
+.small-seg { margin: 6px 0 0; }
+.small-seg button { min-height: 2.6rem; font-size: .95rem; }
+.tr-date-big { font-size: 1.35rem; font-weight: 800; margin-top: 6px; }
+.plan-card.top { box-shadow: 0 0 0 3px #f2c14e, var(--shadow); }
+.plan-head { display: flex; align-items: center; justify-content: space-between; }
+.plan-rank { font-weight: 800; font-size: .9rem; background: #fff3d6; color: #8a5200; padding: 4px 10px; border-radius: 999px; }
+.plan-stars { color: #eda100; font-size: 1.05rem; letter-spacing: 1px; }
+.plan-stars i { color: #e6dfd3; font-style: normal; }
+.plan-title { display: flex; gap: 12px; align-items: center; margin-top: 10px; }
+.plan-emoji { font-size: 2.6rem; }
+.plan-name { font-size: 1.4rem; font-weight: 800; }
+.plan-name small { font-size: .9rem; color: var(--muted); font-weight: 700; }
+.plan-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.plan-facts span, .perk { background: var(--soft); border-radius: 999px; padding: 4px 10px; font-size: .82rem; font-weight: 700; color: var(--ink2); }
+.plan-total { display: flex; align-items: flex-end; justify-content: space-between; margin-top: 12px; }
+.plan-money { font-size: 2rem; font-weight: 800; line-height: 1.15; }
+.spark { width: 7rem; height: 2rem; }
+.plan-break { display: grid; gap: 4px; margin-top: 8px; font-size: .92rem; color: var(--ink2); font-weight: 600; }
+.plan-break b { color: var(--ink); }
+.price-tag { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 999px; font-size: .78rem; font-weight: 800; background: var(--soft); }
+.price-tag.good { background: var(--good-bg); color: var(--good); }
+.price-tag.up { background: var(--miss-bg); color: var(--miss); }
+.plan-card a.btn { text-decoration: none; flex: 1; }
+.day-row { align-items: flex-start; }
+.day-badge { flex: none; background: #e3eefb; color: #1c5cab; border-radius: 10px; padding: 2px 8px; font-size: .8rem; font-weight: 800; margin-top: 2px; }
+
 /* ---------- news ---------- */
 .news-item { padding: 14px 0; border-bottom: 1px solid var(--line); }
 .news-item:last-of-type { border-bottom: 0; margin-bottom: 8px; }
