@@ -854,7 +854,9 @@
   function priceFor(d, origin, dates) {
     const month = +dates.start.slice(5, 7), peak = d.peak.includes(month);
     const km = haversine(origin, d), people = S.travel.people;
-    const live = window.TRAVEL_PRICES && window.TRAVEL_PRICES.routes && window.TRAVEL_PRICES.routes[`${origin.code}-${d.code}`];
+    // Live fares are looked up for the default plan (7 nights from the suggested Tuesday); use them only when the dates match.
+    const found = window.TRAVEL_PRICES && window.TRAVEL_PRICES.routes && window.TRAVEL_PRICES.routes[`${origin.code}-${d.code}`];
+    const live = found && found.depart === dates.start && found.ret === dates.end ? found : null;
     let travel, mode;
     if (km < 450) {
       mode = 'rail';
@@ -943,11 +945,11 @@
       </div>
     </section>`;
     const liveUpdated = window.TRAVEL_PRICES && window.TRAVEL_PRICES.updated;
-    html += `<h2 class="sec-title ${A()}">🏆 性价比排行<span class="sec-note">${liveUpdated ? `机票 ${fmtDate(liveUpdated)} 更新` : '参考价'}</span></h2>`;
+    html += `<h2 class="sec-title ${A()}">🏆 性价比排行<span class="sec-note">${liveUpdated ? `机票 ${fmtDate(liveUpdated)} 查过` : '参考价'}</span></h2>`;
     if (!r.plans.length) html += emptyCard('🧳', '这段时间没有特别合适的地方', '点「早一周 / 晚一周」换个日子看看', '晚一周', 'tr-shift');
     r.plans.forEach((p, i) => {
       const d = p.d, m = r.month;
-      const travelLabel = p.mode === 'rail' ? '高铁往返约' : p.mode === 'live' ? '机票往返最低' : '机票往返约';
+      const travelLabel = p.mode === 'rail' ? '高铁往返约' : p.mode === 'live' ? `机票往返最低（${esc(p.live.airline)}${p.live.stops ? '转机' : '直飞'}）` : '机票往返约';
       html += `<section class="card plan-card ${i === 0 ? 'top' : ''} ${A()}">
         <div class="plan-head">
           <span class="plan-rank">${i === 0 ? '🥇 性价比第1' : `第 ${i + 1}`}</span>
@@ -977,7 +979,7 @@
         <button class="btn btn-outline btn-wide" style="margin-top:10px" data-action="tr-plan" data-id="${d.id}">📋 看看这一周怎么玩</button>
       </section>`;
     });
-    html += `<p class="foot-note">${liveUpdated ? '机票价格每天自动更新；' : ''}酒店和${liveUpdated ? '' : '机票'}价格是按往年淡旺季估的参考价，实际以携程为准</p>`;
+    html += `<p class="foot-note">标「直飞 / 转机」的机票价是睿睿每天早上从 Google Flights 查到的真实最低价（排名前 3 的地方）；其余机票和酒店是按往年淡旺季估的参考价，实际以携程为准</p>`;
     return html;
   }
 
