@@ -1,5 +1,5 @@
 window.NEWS = {
- "updated": "2026-10-31",
+ "updated": "2026-11-01",
  "items": [
   {
    "tag": "世界焦点",
@@ -18,12 +18,12 @@ window.NEWS = {
    "time": "10月31日 06:29"
   },
   {
-   "tag": "国际要闻",
-   "title": "欧盟与加拿大周五宣布建立联盟， 对付特朗普对美国和传统伙伴关系的破坏",
-   "summary": "欧盟与加拿大周五宣布建立联盟，旨在巩固双方关系，以应对美国总统特朗普试图破坏美国与传统伙伴之间关系的举动。在蒙特利尔举行的峰会为期两天。结束后，欧盟表示，加拿大将参与一项总额为90…",
-   "link": "https://www.rfi.fr/cn/%E6%AC%A7%E6%B4%B2/20261030-%E6%AC%A7%E7%9B%9F%E4%B8%8E%E5%8A%A0%E6%8B%BF%E5%A4%A7%E5%91%A8%E4%BA%94%E5%AE%A3%E5%B8%83%E5%BB%BA%E7%AB%8B%E8%81%94%E7%9B%9F%EF%BC%8C-%E5%AF%B9%E4%BB%98%E7%89%B9%E6%9C%97%E6%99%AE%E5%AF%B9%E7%BE%8E%E5%9B%BD%E5%92%8C%E4%BC%A0%E7%BB%9F%E4%BC%99%E4%BC%B4%E5%85%B3%E7%B3%BB%E7%9A%84%E7%A0%B4%E5%9D%8F",
-   "source": "法广",
-   "time": "10月30日 15:36"
+   "tag": "移民",
+   "title": "特朗普重返白宮後，如何從五方面改變美國移民政策？",
+   "summary": "特朗普承諾封鎖邊境及大規模遣返移民後重返白宮。這兩項標誌性政策如今取得了甚麼成效，又帶來哪些影響？",
+   "link": "https://www.bbc.com/zhongwen/articles/cmy83lne67zqo/trad?at_medium=RSS&at_campaign=rss",
+   "source": "BBC中文",
+   "time": "10月26日 17:17"
   }
  ]
 };
