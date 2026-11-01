@@ -3,7 +3,7 @@ window.TRAVEL_PRICES = {
  "routes": {
   "SHA-BHY": {
    "price": 2371,
-   "airline": "东航",
+   "airline": "吉祥航空",
    "stops": 0,
    "time": "17:20",
    "from": "PVG",
