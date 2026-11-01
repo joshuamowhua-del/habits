@@ -53,6 +53,7 @@
   const weekdayOf = k => WEEK[parseKey(k).getDay()];
   const fmtTime = ts => { const d = new Date(ts); return `${d.getHours()}:${pad(d.getMinutes())}`; };
   const clamp01 = x => Math.max(0, Math.min(1, x));
+  const daysBetween = (a, b) => Math.round((parseKey(b) - parseKey(a)) / 864e5);
   const pct = x => Math.round(clamp01(x) * 100);
   const fmtDur = ms => {
     const s = Math.max(0, Math.floor(ms / 1000));
@@ -84,6 +85,7 @@
       ],
       log: {},
       timers: {},
+      vocab: { days: {}, next: 0, words: {} },
       nextColor: 3,
     };
   }
@@ -94,6 +96,8 @@
     s.meds = Array.isArray(s.meds) ? s.meds : [];
     s.log = s.log || {};
     s.timers = s.timers || {};
+    s.vocab = s.vocab && s.vocab.days ? s.vocab : { days: {}, next: 0, words: {} };
+    s.vocab.words = s.vocab.words || {};
     if (typeof s.nextColor !== 'number') s.nextColor = s.habits.length % COLORS.length;
     return s;
   }
@@ -145,6 +149,15 @@
     tl.m[s.meds[1].id] = { morning: Date.now() - 3 * 3600e3 };
     s.log[t] = tl;
     s.settings.name = '爸爸妈妈';
+    for (let i = 4; i >= 1; i--) {
+      const known = {};
+      (window.WORD_DAYS || [])[4 - i]?.words.forEach((w, k) => { if (k < 10 - i) known[w[0]] = 1; });
+      s.vocab.days[addDays(t, -i)] = { g: 4 - i, known };
+    }
+    s.vocab.next = 4;
+    (window.WORD_DAYS || []).slice(0, 4).forEach((L, gi) => L.words.forEach((w, k) => {
+      s.vocab.words[w[0]] = { box: k % 4 === 0 ? 0 : 1 + (k % 3), right: 1 + (k % 3), wrong: k % 4 === 0 ? 1 : 0, last: addDays(t, -(4 - gi)) };
+    }));
     return s;
   }
 
@@ -192,7 +205,7 @@
   // One flower per habit that hits its goal and per medicine fully taken that day.
   function flowersOn(day) {
     const st = stats(day);
-    return st.hDone + st.ms.filter(m => m.slots.every(s => mt(day, m.id, s))).length;
+    return st.hDone + st.ms.filter(m => m.slots.every(s => mt(day, m.id, s))).length + (vocabDone(day) ? 1 : 0);
   }
 
   function totalFlowers() {
@@ -211,7 +224,7 @@
   // ---------- ui state ----------
   const ui = {
     view: 'today', day: todayKey(), trend: 'week', month: todayKey().slice(0, 7), enter: true, pop: null,
-    ruiText: '', ruiFresh: true, ruiTap: 0,
+    ruiText: '', ruiFresh: true, ruiTap: 0, vocabDay: null, vocabQuiz: false,
   };
   const lastP = {};
   const lastCount = {};
@@ -222,6 +235,7 @@
   if (hashView.includes('trends') || hashView.includes('month')) ui.view = 'trends';
   if (hashView.includes('month')) ui.trend = 'month';
   if (hashView.includes('settings')) ui.view = 'settings';
+  if (hashView.includes('vocab')) ui.view = 'vocab';
 
   // ---------- rings ----------
   function ring(key, p, color, cx, r, sw, track) {
@@ -245,7 +259,7 @@
     document.documentElement.dataset.font = S.settings.font === 'xl' ? 'xl' : 'large';
     animIndex = 0;
     const main = $('#main');
-    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'trends' ? viewTrends() : viewSettings();
+    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'vocab' ? viewVocab() : ui.view === 'trends' ? viewTrends() : viewSettings();
     main.classList.toggle('enter', ui.enter && !reduced);
     ui.enter = false;
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === ui.view));
@@ -320,6 +334,11 @@
       const p = st.ms.filter(m => m.slots.includes(s) && !mt(t, m.id, s));
       if (p.length) return `${who}，${SLOTS[s]}的${p.slice(0, 2).map(m => m.name).join('、')}${p.length > 2 ? '等' : ''}还没吃哦，吃完点一下告诉睿睿～`;
     }
+    if (WD.length && hour >= 9 && vocabDone(t) && dueWords().length) return `今天的单词背完啦！还有 ${dueWords().length} 个旧单词该复习了，翻翻单词卡吧 🔁`;
+    if (WD.length && hour >= 9 && !vocabDone(t)) {
+      const v = vocabDay(t, true);
+      return `${who}，今天的 10 个英语单词（第 ${v.g + 1} 课「${lessonOf(v).theme}」）还没背完哦，学一点点，出门更方便 📖`;
+    }
     if (st.overall >= 1) return `今天全部完成啦！${who}是自律之星 ⭐ 睿睿给你们鼓掌 👏`;
     if (st.overall === 0) return `${greeting()}！我是睿睿 👓 今天由我来监督${who}哦～`;
     const left = st.hs.filter(h => hv(t, h.id) < h.goal);
@@ -337,6 +356,11 @@
       const f = flowersOn(todayKey()), total = totalFlowers(), lv = levelOf(total);
       return `今天得到 ${f} 朵小红花 🌸，一共 ${total} 朵，现在是「${lv.name}」${lv.icon}` +
         (lv.next ? `，再 ${lv.next.at - total} 朵就升级啦！` : '，已经是最高级啦！');
+    }
+    const v = WD.length ? vocabDay(todayKey(), true) : null;
+    if (v && Math.random() < 0.5) {
+      const w = lessonOf(v).words[Math.floor(Math.random() * lessonOf(v).words.length)];
+      return `考考你：「${w[0]}」是什么意思？……答案是「${w[1]}」😄`;
     }
     return TIPS[Math.floor(Math.random() * TIPS.length)];
   }
@@ -360,13 +384,14 @@
     }, 40);
   }
 
-  function speak(text) {
+  function speak(text, lang = 'zh-CN') {
     if (!('speechSynthesis' in window)) { toast('这台手机暂时不能朗读'); return; }
     speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text.replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, ''));
-    u.lang = 'zh-CN';
-    u.rate = 0.9;
-    const v = speechSynthesis.getVoices().find(x => /zh[-_]CN/i.test(x.lang));
+    u.lang = lang;
+    u.rate = lang.startsWith('en') ? 0.8 : 0.9;
+    const voices = speechSynthesis.getVoices().filter(x => x.lang.replace('_', '-').toLowerCase() === lang.toLowerCase());
+    const v = voices.find(x => /Samantha|Ava|Allison/.test(x.name)) || voices[0];
     if (v) u.voice = v;
     speechSynthesis.speak(u);
   }
@@ -417,6 +442,340 @@
     return `睿睿播报，今天的新闻。` + N.items.map((n, i) => `${nums[i] || ''}，${n.tag}：${n.title}。${n.summary || ''}`).join(' ');
   }
 
+  // ---------- vocabulary ----------
+  const WD = window.WORD_DAYS || [];
+
+  // A day's lesson is picked the first time that day is opened, then kept forever.
+  function vocabDay(day, create) {
+    let v = S.vocab.days[day];
+    if (!v && create && WD.length) {
+      v = S.vocab.days[day] = { g: S.vocab.next % WD.length, known: {} };
+      S.vocab.next++;
+      save();
+    }
+    return v || null;
+  }
+  const lessonOf = v => WD[v.g % WD.length];
+  const knownCount = v => (v && WD.length ? lessonOf(v).words.filter(w => v.known[w[0]]).length : 0);
+  const vocabDone = day => { const v = S.vocab.days[day]; return !!v && WD.length > 0 && knownCount(v) >= lessonOf(v).words.length; };
+  const vocabTotal = () => Object.values(S.vocab.days).reduce((a, v) => a + knownCount(v), 0);
+
+  function vocabTodayCard() {
+    if (!WD.length) return '';
+    const v = vocabDay(todayKey(), true), L = lessonOf(v), k = knownCount(v), n = L.words.length;
+    return `<section class="card vocab-today ${A()}">
+      <div class="habit-top">
+        <div class="mini-ring"><svg viewBox="0 0 84 84" aria-hidden="true">${ring('vocab-today', k / n, COLORS[6], 42, 36, 10, COLORS[6] + '2e')}</svg><span class="mini-icon">📖</span></div>
+        <div class="habit-info"><div class="habit-name">第 ${v.g + 1} 课 · ${esc(L.theme)}</div>
+          <div class="habit-val"><b>${k}</b> / ${n} 个记住了</div></div>
+        ${k >= n ? '<span class="chip-done">✓ 背完了</span>' : ''}
+      </div>
+      <div class="habit-actions"><button class="btn btn-vocab btn-wide" data-action="tab" data-view="vocab">${k ? '📖 继续背单词' : '📖 开始背今天的单词'}</button></div>
+    </section>`;
+  }
+
+  function wordCard(w, opts = {}) {
+    const [en, zh, se, sz] = w, v = opts.v, known = v && v.known[en];
+    return `<div class="card word-card ${known ? 'known' : ''} ${opts.quiz ? 'quiz' : ''} ${A()}">
+      <div class="w-top">${opts.num ? `<span class="w-num">${opts.num}</span>` : ''}<span class="w-emoji">${WORD_EMOJI[en] || ''}</span><span class="w-en">${esc(en)}</span>
+        <button class="say-btn" data-action="say-en" data-text="${esc(en)}" aria-label="听 ${esc(en)} 的发音">🔊</button></div>
+      <div class="w-zh hideable">${esc(zh)}</div>
+      <div class="w-sent">
+        <div class="s-en">${esc(se)}<button class="say-btn small" data-action="say-en" data-text="${esc(se)}" aria-label="听例句">🔊</button></div>
+        <div class="s-zh hideable">${esc(sz)}</div>
+      </div>
+      ${opts.from ? `<div class="w-from">${opts.from}</div>` : ''}
+      ${opts.quiz ? '<button class="link-btn reveal-btn" data-action="reveal">👀 看看中文</button>' : ''}
+      ${v ? `<button class="btn ${known ? 'btn-done' : 'btn-vocab'} btn-wide" data-action="word-known" data-word="${esc(en)}">${known ? '✓ 记住了' : '记住了就点我'}</button>` : ''}
+    </div>`;
+  }
+
+  function viewVocab() {
+    if (!WD.length) return `<header class="page-head"><h1>📖 背单词</h1></header><div class="card empty"><div class="e-title">单词还没加载出来</div><div class="e-text">联网后重新打开试试</div></div>`;
+    const t = todayKey();
+    vocabDay(t, true);
+    const day = ui.vocabDay && S.vocab.days[ui.vocabDay] ? ui.vocabDay : t;
+    const v = S.vocab.days[day], L = lessonOf(v), k = knownCount(v), n = L.words.length;
+    const past = Object.keys(S.vocab.days).filter(d => d < t).sort().reverse();
+    let html = `<header class="page-head"><h1>📖 背单词</h1><p>每天 10 个，中英对照，点 🔊 听发音</p></header>
+      <input class="text-input search-input ${A()}" id="vocab-search" type="search" placeholder="🔍 搜学过的单词（中英文都行）" autocomplete="off">
+      <div id="vocab-results"></div>
+      ${day === t ? '' : `<div class="past-banner ${A()}">正在看 ${fmtDate(day)} 的单词 <button class="btn btn-small" data-action="vocab-day" data-day="${t}">回到今天</button></div>`}
+      ${vocabHub(day === t)}
+      <section class="card lesson-head ${A()}">
+        <div class="card-title">${day === t ? '今天' : fmtDate(day)} · 第 ${v.g + 1} 课「${esc(L.theme)}」</div>
+        <div class="level-track vocab-track"><div class="level-fill" style="width:${Math.round(k / n * 100)}%"></div></div>
+        <div class="card-sub" style="margin-top:6px">记住了 ${k} / ${n} 个${k >= n ? ' · 太棒了，全部记住！🎉' : ''}</div>
+        <div class="quick" style="margin-top:12px">
+          <button class="btn btn-vocab grow" data-action="cards" data-kind="today">🃏 用单词卡背</button>
+          <button class="btn btn-outline" data-action="vocab-quiz">${ui.vocabQuiz ? '👀 显示' : '🙈 遮中文'}</button>
+        </div>
+      </section>`;
+    html += L.words.map((w, i) => wordCard(w, { v, num: i + 1, quiz: ui.vocabQuiz })).join('');
+    const shaky = shakyWords();
+    if (shaky.length) {
+      html += `<h2 class="sec-title ${A()}">📕 生词本<span class="sec-note">${shaky.length} 个</span></h2>
+        <section class="card ${A()}"><div class="fc-chips">${shaky.slice(0, 40).map(({ w }) =>
+          `<button class="fc-chip" data-action="say-en" data-text="${esc(w[0])}">${emojiOf(w)} ${esc(w[0])} · ${esc(w[1])} 🔊</button>`).join('')}</div>
+        <button class="btn btn-outline btn-wide" style="margin-top:12px" data-action="cards" data-kind="shaky">📕 练练生词本</button></section>`;
+    }
+    if (past.length) {
+      html += `<h2 class="sec-title ${A()}">🗓️ 以前学过的</h2><section class="card ${A()}"><div class="detail-list">${past.map(d => {
+        const pv = S.vocab.days[d], pk = knownCount(pv);
+        return `<button class="detail-row hist-row ${d === day ? 'on' : ''}" data-action="vocab-day" data-day="${d}">
+          <span>${pk >= lessonOf(pv).words.length ? '✅' : '📖'}</span>${fmtDate(d)} · ${esc(lessonOf(pv).theme)}<span class="dv">记住 ${pk}/${lessonOf(pv).words.length} ›</span></button>`;
+      }).join('')}</div></section>`;
+    }
+    return html;
+  }
+
+  function vocabHub(isToday) {
+    const st = vocabStats();
+    return `<section class="card vocab-hub ${A()}">
+      <div class="hub-row">
+        <div class="hub-stat"><b>${st.total}</b><span>学过的词</span></div>
+        <div class="hub-stat"><b>${st.solid}</b><span>记牢了</span></div>
+        <div class="hub-stat"><b>${st.shaky}</b><span>生词本</span></div>
+      </div>
+      ${isToday && st.due ? `<button class="btn btn-review btn-wide" data-action="cards" data-kind="review">🔁 复习以前的单词（${st.due} 个）</button>`
+        : isToday && st.total > 10 ? '<div class="card-sub" style="text-align:center;margin-top:8px">今天没有要复习的旧单词 👍</div>' : ''}
+    </section>`;
+  }
+
+  function searchVocab(q) {
+    const box = $('#vocab-results');
+    if (!box) return;
+    q = q.trim().toLowerCase();
+    if (!q) { box.innerHTML = ''; return; }
+    const t = todayKey(), seen = new Set(), hits = [];
+    Object.keys(S.vocab.days).filter(d => d <= t).sort().reverse().forEach(d => {
+      lessonOf(S.vocab.days[d]).words.forEach(w => {
+        if (seen.has(w[0]) || !(w[0].toLowerCase().includes(q) || w[1].includes(q))) return;
+        seen.add(w[0]);
+        hits.push(wordCard(w, { from: `${fmtDate(d)} 学的` }));
+      });
+    });
+    box.innerHTML = hits.length ? `<div class="card-sub" style="margin:4px 4px 10px">找到 ${hits.length} 个</div>${hits.slice(0, 30).join('')}`
+      : '<div class="card empty"><div class="e-text">还没学过这个词，换个词试试</div></div>';
+  }
+
+  function toggleWord(word) {
+    const t = todayKey(), day = ui.vocabDay && S.vocab.days[ui.vocabDay] ? ui.vocabDay : t;
+    const v = S.vocab.days[day];
+    if (!v) return;
+    const wasDone = vocabDone(day), f0 = totalFlowers();
+    if (v.known[word]) delete v.known[word]; else v.known[word] = Date.now();
+    const r = S.vocab.words[word] || (S.vocab.words[word] = { box: 0, right: 0, wrong: 0, last: '' });
+    if (v.known[word]) { r.box = Math.max(1, r.box); r.right++; r.last = todayKey(); }
+    save();
+    const y = scrollY;
+    render();
+    scrollTo(0, y);
+    if (!wasDone && vocabDone(day)) {
+      const lv0 = levelOf(f0), lv1 = levelOf(totalFlowers());
+      confetti(true);
+      cheer(lv1.i > lv0.i ? lv1.icon : '📖', lv1.i > lv0.i ? `升级啦！「${lv1.name}」` : '10 个单词全记住了！');
+    } else if (v.known[word]) {
+      toast(`👍 记住「${word}」啦`);
+    }
+  }
+
+  // ---------- flashcards ----------
+  // Picture hints make the cards easier to remember; lessons without one use the theme icon.
+  const WORD_EMOJI = {
+    hello: '👋', goodbye: '👋', 'thank you': '🙏', please: '🙇', sorry: '😔', 'excuse me': '🙋', morning: '🌅', night: '🌙', friend: '🤝', name: '📛',
+    family: '👨‍👩‍👧', father: '👨', mother: '👩', son: '👦', daughter: '👧', husband: '🤵', wife: '👰', grandson: '👶', granddaughter: '👧', 'daughter-in-law': '👩',
+    today: '📅', tomorrow: '➡️', yesterday: '⬅️', week: '🗓️', month: '🗓️', year: '🎆', hour: '⏰', minute: '⏱️', early: '🐓', late: '🕙',
+    Monday: '1️⃣', Tuesday: '2️⃣', Wednesday: '3️⃣', Thursday: '4️⃣', Friday: '5️⃣', Saturday: '6️⃣', Sunday: '☀️',
+    weekend: '🛋️', holiday: '🏖️', birthday: '🎂', weather: '🌤️', sunny: '☀️', rain: '🌧️', snow: '❄️', wind: '🌬️', cloudy: '☁️', hot: '🥵', cold: '🥶', warm: '🧣', umbrella: '☂️',
+    breakfast: '🍳', lunch: '🍱', dinner: '🍽️', rice: '🍚', noodles: '🍜', bread: '🍞', egg: '🥚', milk: '🥛', soup: '🍲', tea: '🍵',
+    apple: '🍎', banana: '🍌', orange: '🍊', grape: '🍇', watermelon: '🍉', strawberry: '🍓', pear: '🍐', peach: '🍑', cherry: '🍒', lemon: '🍋',
+    vegetable: '🥬', tomato: '🍅', potato: '🥔', carrot: '🥕', cabbage: '🥬', onion: '🧅', garlic: '🧄', mushroom: '🍄', corn: '🌽', cucumber: '🥒',
+    supermarket: '🏪', cart: '🛒', price: '🏷️', sale: '🏷️', coupon: '🎟️', cashier: '🧾', receipt: '🧾', bag: '🛍️', cheap: '👍', expensive: '💎',
+    money: '💰', cash: '💵', 'credit card': '💳', change: '🪙', dollar: '💲', pay: '💳', bank: '🏦', account: '📒', tip: '💵', total: '🧮',
+    doctor: '👨‍⚕️', nurse: '👩‍⚕️', hospital: '🏥', appointment: '📅', clinic: '🏥', emergency: '🚑', insurance: '🛡️', 'check-up': '🩺', healthy: '💪', sick: '🤒',
+    head: '🗣️', eye: '👁️', ear: '👂', nose: '👃', mouth: '👄', tooth: '🦷', hand: '✋', leg: '🦵', back: '🧍', stomach: '🫃',
+    pain: '😣', fever: '🤒', cough: '😷', flu: '🤧', headache: '🤕', dizzy: '😵‍💫', tired: '😪', allergy: '🤧', itchy: '🫳', 'sore throat': '🗣️',
+    pharmacy: '💊', medicine: '💊', pill: '💊', prescription: '📝', refill: '🔄', dose: '🥄', 'side effect': '⚠️', vitamin: '🍊', 'blood pressure': '🩺', label: '🏷️',
+    car: '🚗', bus: '🚌', train: '🚆', subway: '🚇', taxi: '🚕', airport: '✈️', ticket: '🎫', station: '🚉', stop: '🚏', 'seat belt': '🔒',
+    left: '⬅️', right: '➡️', straight: '⬆️', corner: '↪️', street: '🛣️', block: '🏘️', near: '📍', far: '🗺️', map: '🗺️', address: '🏠',
+    house: '🏠', kitchen: '🍳', bedroom: '🛏️', bathroom: '🛁', 'living room': '🛋️', door: '🚪', window: '🪟', key: '🔑', table: '🪑', chair: '🪑',
+    cook: '👩‍🍳', pot: '🍲', pan: '🍳', knife: '🔪', spoon: '🥄', fork: '🍴', chopsticks: '🥢', bowl: '🥣', plate: '🍽️', cup: '☕',
+    clothes: '👕', shirt: '👔', pants: '👖', dress: '👗', jacket: '🧥', shoes: '👟', socks: '🧦', hat: '👒', size: '📏', wear: '👚',
+    red: '🔴', blue: '🔵', green: '🟢', yellow: '🟡', black: '⚫', white: '⚪', pink: '🩷', purple: '🟣', brown: '🟤', gray: '🩶',
+    happy: '😄', sad: '😢', angry: '😠', worried: '😟', excited: '🤩', scared: '😨', lonely: '🥺', proud: '🥰', calm: '😌', bored: '🥱',
+    restaurant: '🍽️', menu: '📋', order: '📝', waiter: '🤵', reservation: '📞', bill: '🧾', delicious: '😋', spicy: '🌶️', 'to go': '🥡', napkin: '🧻',
+    phone: '📱', call: '📞', message: '💬', 'video call': '📹', voicemail: '📼', number: '🔢', charger: '🔌', password: '🔐', internet: '🌐', picture: '🖼️',
+    eat: '🍴', drink: '🥤', sleep: '😴', walk: '🚶', run: '🏃', sit: '🪑', stand: '🧍', read: '📖', write: '✍️', listen: '👂',
+    open: '🔓', close: '🔒', buy: '🛍️', give: '🎁', take: '🤲', come: '👋', go: '🚶', wait: '⏳', help: '🆘', understand: '💡',
+    big: '🐘', small: '🐭', long: '📏', short: '✂️', new: '✨', old: '📜', fast: '🐇', slow: '🐢', clean: '🧽', full: '😮‍💨',
+    easy: '👌', difficult: '🧗', busy: '🏃', free: '🆓', quiet: '🤫', noisy: '📢', beautiful: '🌸', important: '⭐', safe: '🛡️', ready: '✅',
+    exercise: '🏋️', park: '🏞️', swim: '🏊', yoga: '🧘', stretch: '🙆', dance: '💃', bicycle: '🚲', step: '👣', breathe: '🌬️', relax: '😌',
+    hobby: '🎨', music: '🎵', movie: '🎬', book: '📚', garden: '🌱', flower: '🌷', photo: '📷', travel: '🧳', game: '♟️', sing: '🎤',
+    tree: '🌳', grass: '🌿', mountain: '⛰️', river: '🏞️', sea: '🌊', sky: '🌌', sun: '☀️', moon: '🌕', star: '⭐', bird: '🐦',
+    dog: '🐶', cat: '🐱', fish: '🐟', chicken: '🐔', cow: '🐄', pig: '🐷', horse: '🐴', rabbit: '🐰', duck: '🦆', panda: '🐼',
+    library: '📚', 'post office': '📮', school: '🏫', church: '⛪', mall: '🏬', museum: '🏛️', gym: '🏋️', 'senior center': '🧓', 'gas station': '⛽', 'parking lot': '🅿️',
+    Christmas: '🎄', Thanksgiving: '🦃', 'New Year': '🎆', 'Spring Festival': '🧧', gift: '🎁', party: '🎉', celebrate: '🥳', card: '💌', turkey: '🦃', dumplings: '🥟',
+    neighbor: '🏡', visit: '🚪', invite: '💌', together: '👫', meet: '🤝', chat: '💬', share: '🍪', smile: '😊', polite: '🙇', kind: '💗',
+    form: '📄', sign: '✍️', line: '🧍‍♂️', mail: '✉️', package: '📦', deliver: '🚚', ID: '🪪', document: '📁', office: '🏢', 'date of birth': '🎂',
+    police: '👮', fire: '🔥', careful: '⚠️', accident: '💥', lock: '🔒', alarm: '⏰', slippery: '⚠️', scam: '🚫', stranger: '🕵️', warning: '⚠️',
+    always: '♾️', usually: '🔁', often: '🔁', sometimes: '🌗', never: '🚫', 'every day': '📆', once: '1️⃣', twice: '2️⃣', again: '🔁', soon: '⏩',
+    what: '❓', where: '📍', when: '🕐', who: '🧑', why: '🤔', how: '🛠️', 'how much': '💲', which: '👉', can: '💪', may: '🙋',
+    repair: '🔧', broken: '💔', leak: '💧', light: '💡', heater: '🔥', 'air conditioner': '❄️', trash: '🗑️', recycle: '♻️', laundry: '🧺', vacuum: '🧹',
+    great: '👍', wonderful: '🌈', excellent: '🏅', practice: '🔁', remember: '🧠', forget: '🙈', try: '💪', improve: '📈', progress: '🚀', believe: '💖',
+  };
+  const INTERVALS = [0, 1, 3, 7, 14, 30]; // days until the next review, by memory box
+  const emojiOf = w => WORD_EMOJI[w[0]] || '📖';
+  const recOf = en => S.vocab.words[en];
+
+  function grade(w, ok, lessonDay) {
+    const r = S.vocab.words[w[0]] || (S.vocab.words[w[0]] = { box: 0, right: 0, wrong: 0, last: '' });
+    if (ok) { r.box = Math.min(5, r.box + 1); r.right++; } else { r.box = 0; r.wrong++; }
+    r.last = todayKey();
+    const v = lessonDay && S.vocab.days[lessonDay];
+    if (v && lessonOf(v).words.some(x => x[0] === w[0])) {
+      if (ok) v.known[w[0]] = v.known[w[0]] || Date.now(); else delete v.known[w[0]];
+    }
+    save();
+  }
+
+  // Every word from lessons before today, with the day it was learned.
+  function learnedWords(includeToday) {
+    const t = todayKey(), seen = new Set(), out = [];
+    Object.keys(S.vocab.days).filter(d => includeToday ? d <= t : d < t).sort().forEach(d => {
+      lessonOf(S.vocab.days[d]).words.forEach(w => { if (!seen.has(w[0])) { seen.add(w[0]); out.push({ w, day: d }); } });
+    });
+    return out;
+  }
+
+  function dueWords() {
+    const t = todayKey();
+    return learnedWords(false).filter(({ w }) => {
+      const r = recOf(w[0]);
+      return !r || daysBetween(r.last, t) >= INTERVALS[r.box];
+    }).sort((a, b) => ((recOf(a.w[0]) || {}).box || 0) - ((recOf(b.w[0]) || {}).box || 0)).slice(0, 10);
+  }
+
+  const shakyWords = () => learnedWords(true).filter(({ w }) => { const r = recOf(w[0]); return r && r.box === 0 && r.wrong > 0; });
+
+  function vocabStats() {
+    const all = learnedWords(true);
+    return {
+      total: all.length,
+      solid: all.filter(({ w }) => (recOf(w[0]) || {}).box >= 2).length,
+      shaky: shakyWords().length,
+      due: dueWords().length,
+    };
+  }
+
+  let fc = null;
+  function startCards(kind) {
+    const t = todayKey();
+    let items;
+    if (kind === 'today') {
+      const day = ui.vocabDay && S.vocab.days[ui.vocabDay] ? ui.vocabDay : t;
+      items = lessonOf(vocabDay(day, true)).words.map(w => ({ w, day }));
+    } else if (kind === 'review') items = dueWords();
+    else items = shakyWords().slice(0, 15);
+    if (!items.length) {
+      toast(kind === 'review' ? '今天没有要复习的，真棒！' : '生词本是空的 👍');
+      return;
+    }
+    fc = { kind, items, i: 0, flipped: false, right: 0, wrong: [], auto: fc ? fc.auto : true };
+    document.body.classList.add('no-scroll');
+    renderCard();
+  }
+
+  function renderCard() {
+    const root = $('#fc-root');
+    if (!fc) { root.innerHTML = ''; root.classList.remove('open'); document.body.classList.remove('no-scroll'); return; }
+    root.classList.add('open');
+    if (fc.i >= fc.items.length) { root.innerHTML = cardSummary(); return; }
+    const { w } = fc.items[fc.i], [en, zh, se, sz] = w, r = recOf(en);
+    const dots = fc.items.map((_, k) => `<i class="${k < fc.i ? 'done' : k === fc.i ? 'now' : ''}"></i>`).join('');
+    root.innerHTML = `<div class="fc-overlay">
+      <div class="fc-head">
+        <button class="fc-close" data-fc="close">✕ 结束</button>
+        <span class="fc-count">${fc.i + 1} / ${fc.items.length}</span>
+        <button class="fc-auto ${fc.auto ? 'on' : ''}" data-fc="auto">🔊 自动读</button>
+      </div>
+      <div class="fc-dots">${dots}</div>
+      <div class="fc-stage">
+        <div class="fc-card ${fc.flipped ? 'flipped' : ''}" data-fc="flip" role="button" aria-label="点一下翻面">
+          <div class="fc-face fc-front">
+            <div class="fc-emoji">${emojiOf(w)}</div>
+            <div class="fc-en">${esc(en)}</div>
+            <button class="say-btn big" data-fc="say" data-text="${esc(en)}" aria-label="听发音">🔊</button>
+            <div class="fc-hint">${r && r.box ? `已经记住 ${r.right} 次` : '先想一想是什么意思'} · 点卡片翻面</div>
+          </div>
+          <div class="fc-face fc-back">
+            <div class="fc-emoji small">${emojiOf(w)}</div>
+            <div class="fc-en small">${esc(en)}</div>
+            <div class="fc-zh">${esc(zh)}</div>
+            <div class="w-sent"><div class="s-en">${esc(se)}<button class="say-btn small" data-fc="say" data-text="${esc(se)}" aria-label="听例句">🔊</button></div>
+              <div class="s-zh">${esc(sz)}</div></div>
+          </div>
+        </div>
+      </div>
+      <div class="fc-actions">
+        <button class="btn fc-no" data-fc="no">😅 还不熟</button>
+        <button class="btn fc-yes" data-fc="yes">😎 记住了</button>
+      </div>
+    </div>`;
+    if (fc.auto) setTimeout(() => speak(en, 'en-US'), 250);
+  }
+
+  function cardSummary() {
+    const n = fc.items.length, ok = fc.right;
+    const msg = ok === n ? '全部记住了，太厉害了！🎉' : ok >= n * 0.7 ? '记住了一大半，真不错！👍' : '没关系，明天睿睿再陪你复习 💪';
+    return `<div class="fc-overlay"><div class="fc-summary">
+      <div class="cheer-rui">${ruiSVG('jump')}</div>
+      <div class="fc-sum-title">${msg}</div>
+      <div class="fc-sum-num"><b>${ok}</b> / ${n} 个记住了</div>
+      ${fc.wrong.length ? `<div class="fc-sum-sub">这些放进了生词本，明天再练：</div>
+        <div class="fc-chips">${fc.wrong.map(w => `<button class="fc-chip" data-fc="say" data-text="${esc(w[0])}">${emojiOf(w)} ${esc(w[0])} · ${esc(w[1])} 🔊</button>`).join('')}</div>` : ''}
+      <div class="btn-stack" style="width:100%">
+        ${fc.wrong.length ? '<button class="btn btn-vocab btn-wide" data-fc="again">🔁 把不熟的再练一遍</button>' : ''}
+        <button class="btn btn-outline btn-wide" data-fc="close">完成</button>
+      </div>
+    </div></div>`;
+  }
+
+  function answerCard(ok) {
+    const item = fc.items[fc.i], before = vocabDone(todayKey()), f0 = totalFlowers();
+    grade(item.w, ok, fc.kind === 'today' ? item.day : null);
+    if (ok) fc.right++; else fc.wrong.push(item.w);
+    const card = $('.fc-card');
+    if (card && !reduced) card.classList.add(ok ? 'out-right' : 'out-left');
+    setTimeout(() => {
+      fc.i++; fc.flipped = false;
+      renderCard();
+      if (fc.i >= fc.items.length) {
+        confetti(fc.right === fc.items.length);
+        if (!before && vocabDone(todayKey())) {
+          const lv0 = levelOf(f0), lv1 = levelOf(totalFlowers());
+          cheer(lv1.i > lv0.i ? lv1.icon : '📖', lv1.i > lv0.i ? `升级啦！「${lv1.name}」` : '今天的 10 个单词全记住了！');
+        }
+      }
+    }, reduced ? 0 : 260);
+  }
+
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-fc]');
+    if (!el || !fc) return;
+    const a = el.dataset.fc;
+    if (a === 'say') { e.stopPropagation(); speak(el.dataset.text, 'en-US'); return; }
+    if (a === 'flip') { fc.flipped = !fc.flipped; el.classList.toggle('flipped', fc.flipped); return; }
+    if (a === 'auto') { fc.auto = !fc.auto; el.classList.toggle('on', fc.auto); return; }
+    if (a === 'yes' || a === 'no') { answerCard(a === 'yes'); return; }
+    if (a === 'again') {
+      fc = Object.assign(fc, { items: fc.wrong.map(w => ({ w, day: null })), i: 0, right: 0, wrong: [], flipped: false, kind: 'shaky' });
+      renderCard();
+      return;
+    }
+    if (a === 'close') { fc = null; renderCard(); if (ui.view === 'vocab') render(); }
+  });
+
   // ---------- today ----------
   function viewToday() {
     const day = ui.day, isToday = day === todayKey(), st = stats(day);
@@ -458,6 +817,7 @@
       ? st.hs.map(h => habitCard(day, h, isToday)).join('')
       : emptyCard('⭐', '还没有添加习惯', '比如读书、散步、喝水', '去添加习惯', 'add-habit');
 
+    html += `<h2 class="sec-title ${A()}">📖 每天10个单词</h2>` + vocabTodayCard();
     html += newsCard();
     html += `<p class="foot-note">数据只保存在这台手机上 · 记得偶尔在「设置」里备份</p>`;
     return html;
@@ -591,6 +951,7 @@
     </div>`;
 
     html += flowerTile();
+    html += vocabTrend(days);
     html += medTable(days);
     activeOrUsedHabits(days).forEach(h => { html += habitWeekCard(h, days); });
     return html;
@@ -605,6 +966,18 @@
       <div class="level-track"><div class="level-fill" style="width:${Math.round(prog * 100)}%"></div></div>
       <div class="card-sub" style="margin-top:6px">${lv.next ? `再 ${lv.next.at - total} 朵升级到「${lv.next.name}」${lv.next.icon}` : '已经是最高等级啦！'}</div>
       <div class="card-sub">每个习惯达标、每种药当天吃完，都能得到一朵</div>
+    </section>`;
+  }
+
+  function vocabTrend(days) {
+    if (!WD.length || !Object.keys(S.vocab.days).length) return '';
+    const t = todayKey();
+    return `<section class="card ${A()}" style="--c:${COLORS[6]};--on:#fff">
+      <div class="card-title">📖 背单词</div>
+      <div class="stat-line"><span class="stat-pill">一共记住 <b>${vocabTotal()}</b> 个单词</span>
+        <span class="stat-pill">最近 7 天背完 <b>${days.filter(vocabDone).length}</b> 天</span></div>
+      <div class="check-row">${days.map(d => `<button class="check-cell" data-action="vocab-day" data-day="${d}" aria-label="${fmtDate(d)} 的单词">
+        <span class="check-dot ${vocabDone(d) ? 'yes' : ''}">${vocabDone(d) ? '✓' : S.vocab.days[d] ? knownCount(S.vocab.days[d]) : ''}</span>${d === t ? '今天' : '周' + weekdayOf(d)}</button>`).join('')}</div>
     </section>`;
   }
 
@@ -1135,7 +1508,8 @@
       body: st.empty ? '<p>这天还没有要记录的事情。</p>' : `
         <p>这天完成了 <b>${pct(st.overall)}%</b></p>
         ${ms ? `<div class="detail-sec">💊 吃药</div><div class="detail-list">${ms}</div>` : ''}
-        ${hs ? `<div class="detail-sec">⭐ 习惯</div><div class="detail-list">${hs}</div>` : ''}`,
+        ${hs ? `<div class="detail-sec">⭐ 习惯</div><div class="detail-list">${hs}</div>` : ''}
+        ${S.vocab.days[day] && WD.length ? `<div class="detail-sec">📖 单词</div><div class="detail-list"><div class="detail-row"><span>📖</span>第 ${S.vocab.days[day].g + 1} 课「${esc(lessonOf(S.vocab.days[day]).theme)}」<span class="dv">记住 ${knownCount(S.vocab.days[day])}/10</span></div></div>` : ''}`,
       actions: [{ label: '关闭' }, {
         label: day === todayKey() ? '去打卡' : '补记 / 修改', cls: 'btn-primary',
         onClick: () => { ui.day = day; ui.view = 'today'; ui.enter = true; ui.ruiFresh = true; render(); scrollTo(0, 0); },
@@ -1179,6 +1553,7 @@
     switch (el.dataset.action) {
       case 'tab':
         if (ui.view !== el.dataset.view) { ui.view = el.dataset.view; ui.enter = true; }
+        if (ui.view === 'vocab') ui.vocabDay = null;
         if (ui.view === 'today') { ui.day = todayKey(); ui.ruiFresh = true; }
         render(); scrollTo(0, 0);
         break;
@@ -1218,6 +1593,19 @@
       }
       case 'day-detail': openDayDetail(el.dataset.day); break;
       case 'tip': toast(el.dataset.tip); break;
+      case 'say-en': speak(el.dataset.text, 'en-US'); break;
+      case 'cards': startCards(el.dataset.kind); break;
+      case 'word-known': toggleWord(el.dataset.word); break;
+      case 'vocab-quiz': ui.vocabQuiz = !ui.vocabQuiz; render(); break;
+      case 'reveal': { const c = el.closest('.word-card'); if (c) { c.classList.toggle('revealed'); el.textContent = c.classList.contains('revealed') ? '🙈 遮起来' : '👀 看看中文'; } break; }
+      case 'vocab-day': {
+        const d = el.dataset.day;
+        if (!S.vocab.days[d]) { toast('这天没有背单词'); break; }
+        ui.vocabDay = d === todayKey() ? null : d;
+        if (ui.view !== 'vocab') { ui.view = 'vocab'; ui.enter = true; }
+        render(); scrollTo(0, 0);
+        break;
+      }
       case 'rui': {
         const svg = el.querySelector('.rui');
         if (svg) { svg.classList.remove('wave'); void svg.getBoundingClientRect(); svg.classList.add('wave'); }
@@ -1241,6 +1629,10 @@
         }, true);
         break;
     }
+  });
+
+  document.addEventListener('input', e => {
+    if (e.target.id === 'vocab-search') searchVocab(e.target.value);
   });
 
   document.addEventListener('change', e => {
