@@ -421,7 +421,8 @@
     u.lang = lang;
     u.rate = lang.startsWith('en') ? 0.8 : 0.9;
     const voices = speechSynthesis.getVoices().filter(x => x.lang.replace('_', '-').toLowerCase() === lang.toLowerCase());
-    const v = voices.find(x => /Samantha|Ava|Allison/.test(x.name)) || voices[0];
+    // English: a clear US voice; Chinese: a gentle male voice when the phone has one (iPhone: Li-Mu).
+    const v = voices.find(x => lang.startsWith('en') ? /Samantha|Ava|Allison/.test(x.name) : /Li-?Mu|Yunxi|Yunjian|Yunyang|Male/i.test(x.name)) || voices[0];
     if (v) u.voice = v;
     speechSynthesis.speak(u);
   }

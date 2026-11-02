@@ -31,12 +31,12 @@ jobs:
           python-version: '3.12'
       - uses: actions/cache@v4
         with:
-          path: ~/.cache/piper
-          key: piper-zh_CN-huayan-medium
+          path: ~/.cache/kokoro
+          key: kokoro-v1.1-zh
       - name: Record news audio
         continue-on-error: true  # the site still goes out; the app falls back to the phone's own voice
         run: |
-          pip install -q piper-tts
+          pip install -q kokoro-onnx soundfile "misaki[zh]==0.9.4"
           command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)
           python scripts/news_audio.py
       - uses: actions/upload-pages-artifact@v3

@@ -1,4 +1,4 @@
-const CACHE = 'daily-habits-v6';
+const CACHE = 'daily-habits-v7';
 const ASSETS = ['./', './index.html', './styles.css', './app.js', './news.js', './health.js', './words.js', './travel.js', './travel-prices.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 

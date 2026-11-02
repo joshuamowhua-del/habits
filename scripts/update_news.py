@@ -66,10 +66,14 @@ def clean(s, limit=None):
     # Datelines like "中新网11月2日电 据……" / "IT之家 11 月 2 日消息，" / "（记者 张三）" add nothing when read aloud.
     s = re.sub(r'^(中新网|中新社|新华社|人民网|IT之家)[^，。电]{0,20}(电|消息)\s*[，,]?\s*', '', s)
     s = re.sub(r'[（(]记者[^）)]{0,20}[）)]', '', s).strip()
-    if limit and len(s) > limit:
-        cut = s[:limit]
-        stop = max(cut.rfind('。'), cut.rfind('；'))
-        s = cut[:stop + 1] if stop >= limit * 0.5 else cut.rstrip('，。、；： ') + '…'
+    if limit:
+        # Keep whole sentences only, so 睿睿 never stops mid-sentence.
+        s = re.sub(r'(\.{3,}|…+)$', '', s).strip()
+        cut = s[:limit] if len(s) > limit else s
+        if cut and cut[-1] not in '。！？”」）)':
+            stop = max(cut.rfind(c) for c in '。！？')
+            cut = cut[:stop + 1] if stop >= 20 else cut.rstrip('，、；：,;: ') + '。'
+        s = cut
     return s
 
 
@@ -97,7 +101,7 @@ def fetch(source, url):
         title = clean(text(el, 'title'))
         if not title:
             continue
-        summary = clean(text(el, 'description', 'summary'), 80)
+        summary = clean(text(el, 'description', 'summary'), 220)
         items.append({
             'title': title,
             'summary': '' if summary.startswith(title[:12]) and len(summary) < len(title) + 6 else summary,
