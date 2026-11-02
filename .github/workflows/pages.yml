@@ -1,5 +1,6 @@
 # Builds and publishes the site. Runs on every push, and after the daily news / flight jobs,
 # and records the news as an MP3 (so it keeps playing with the phone screen off).
+# Voice: Azure neural TTS (free F0 tier) with secrets AZURE_SPEECH_KEY / AZURE_SPEECH_REGION, else open-source Kokoro.
 # The audio is made fresh each time and never committed, so the repo doesn't grow every day.
 name: pages
 on:
@@ -29,12 +30,25 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - uses: actions/cache@v4
+      # Same news + same script = same recording: reuse it (code pushes and flight updates don't re-record).
+      - id: audio
+        uses: actions/cache@v4
+        with:
+          path: |
+            news-audio
+            news-audio.js
+          key: news-audio-${{ secrets.AZURE_SPEECH_KEY != '' && 'azure' || 'kokoro' }}-${{ hashFiles('news.js', 'scripts/news_audio.py') }}
+      - if: steps.audio.outputs.cache-hit != 'true'
+        uses: actions/cache@v4
         with:
           path: ~/.cache/kokoro
           key: kokoro-v1.1-zh
       - name: Record news audio
+        if: steps.audio.outputs.cache-hit != 'true'
         continue-on-error: true  # the site still goes out; the app falls back to the phone's own voice
+        env:
+          AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
         run: |
           pip install -q kokoro-onnx soundfile "misaki[zh]==0.9.4"
           command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -y -q ffmpeg)

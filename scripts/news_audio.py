@@ -5,8 +5,10 @@
     pip install kokoro-onnx soundfile "misaki[zh]==0.9.4"   # plus ffmpeg on PATH (or pip install imageio-ffmpeg)
     python scripts/news_audio.py
 
-Voice: the free open-source Kokoro-82M v1.1-zh model (Apache-2.0), soft male voice VOICE below.
-The model files are downloaded once to ~/.cache/kokoro. Every sentence of every item is read in full.
+Voice: Microsoft Azure neural TTS (free F0 tier, 0.5M characters a month) when AZURE_SPEECH_KEY and
+AZURE_SPEECH_REGION are set — the news-anchor voice AZURE_VOICE below. Without a key, or if Azure fails,
+it falls back to the free open-source Kokoro-82M v1.1-zh model (files cached in ~/.cache/kokoro).
+Every sentence of every item is read in full.
 Writes news-audio/news-<date>.mp3 and news-audio.js with where each item starts.
 """
 import hashlib
@@ -17,7 +19,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import io
+import urllib.error
 import urllib.request
+import uuid
+from xml.sax.saxutils import escape
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +39,9 @@ FILES = {
     'voices-v1.1-zh.bin': 'https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1/voices-v1.1-zh.bin',
     'config.json': 'https://huggingface.co/hexgrad/Kokoro-82M-v1.1-zh/resolve/main/config.json',
 }
+AZURE_VOICE = os.environ.get('NEWS_AZURE_VOICE', 'zh-CN-YunyangNeural')  # male news anchor
+AZURE_STYLE = os.environ.get('NEWS_AZURE_STYLE', 'newscast-casual')
+AZURE_RATE = os.environ.get('NEWS_AZURE_RATE', '-6%')
 RATE = 24000
 NUMS = '一二三四五六七八九十'
 
@@ -75,7 +85,37 @@ def sentences(text):
     return out
 
 
+class AzureVoice:
+    """One request per news item, so the anchor voice gets whole paragraphs and reads them naturally."""
+    whole_items = True
+
+    def __init__(self, key, region):
+        self.key = key
+        self.url = f'https://{region}.tts.speech.microsoft.com/cognitiveservices/v1'
+
+    def say(self, text):
+        body = (f'<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" '
+                f'xml:lang="zh-CN"><voice name="{AZURE_VOICE}"><mstts:express-as style="{AZURE_STYLE}">'
+                f'<prosody rate="{AZURE_RATE}">{escape(text)}</prosody></mstts:express-as></voice></speak>')
+        req = urllib.request.Request(self.url, data=body.encode('utf-8'), method='POST', headers={
+            'Ocp-Apim-Subscription-Key': self.key, 'Content-Type': 'application/ssml+xml',
+            'X-Microsoft-OutputFormat': 'riff-24khz-16bit-mono-pcm', 'User-Agent': 'habits-news',
+            'X-RequestId': uuid.uuid4().hex})
+        for attempt in range(4):
+            try:
+                with urllib.request.urlopen(req, timeout=120) as r:
+                    audio, sr = sf.read(io.BytesIO(r.read()), dtype='float32')
+                    assert sr == RATE, sr
+                    return audio
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or attempt == 3:  # 429 = free tier's per-minute limit; wait and retry
+                    raise
+                time.sleep(15 * (attempt + 1))
+
+
 class Voice:
+    whole_items = False
+
     def __init__(self):
         from kokoro_onnx import Kokoro
         from kokoro_onnx.tokenizer import Tokenizer
@@ -112,20 +152,38 @@ def main():
         parts.append(tidy(f"第{num}条，{n['tag']}。{n['title']}。{n.get('summary', '')}"))
     parts.append('今天的新闻就播到这里。祝爸爸妈妈身体健康，开开心心！')
 
-    v = Voice()
+    key, region = os.environ.get('AZURE_SPEECH_KEY'), os.environ.get('AZURE_SPEECH_REGION', 'eastus')
+    v = AzureVoice(key, region) if key else Voice()
+    try:
+        wav, starts, total = record(v, parts, len(items))
+        engine = f'Azure {AZURE_VOICE}' if key else f'Kokoro {VOICE}'
+    except Exception as e:  # quota used up, network trouble…: the open-source voice still gets the news out
+        if not key:
+            raise
+        print(f'Azure TTS failed ({e}); falling back to Kokoro', file=sys.stderr)
+        wav, starts, total = record(Voice(), parts, len(items))
+        engine = f'Kokoro {VOICE} (fallback)'
+    write(news, items, wav, starts, total, engine)
+    return 0
+
+
+def record(v, parts, n_items):
     pause = lambda sec: np.zeros(int(RATE * sec), dtype=np.float32)
     chunks, starts, total = [], [], 0
     for k, text in enumerate(parts):
-        if 1 <= k <= len(items):
+        if 1 <= k <= n_items:
             starts.append(round(total / RATE, 2))
-        for sent in sentences(text):
+        for sent in ([text] if v.whole_items else sentences(text)):
             for a in (v.say(sent), pause(0.32)):
                 chunks.append(a); total += len(a)
         a = pause(0.8)
         chunks.append(a); total += len(a)
     wav = np.concatenate(chunks)
     wav = wav / max(1e-6, float(np.abs(wav).max())) * 0.9
+    return wav, starts, total
 
+
+def write(news, items, wav, starts, total, engine):
     out_dir = ROOT / 'news-audio'
     out_dir.mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -141,8 +199,7 @@ def main():
     meta = {'date': news['updated'], 'file': 'news-audio/' + name, 'count': len(items),
             'starts': starts, 'length': round(total / RATE, 1)}
     (ROOT / 'news-audio.js').write_text('window.NEWS_AUDIO = ' + json.dumps(meta) + ';\n', encoding='utf-8')
-    print(f"{name}: {meta['length']} s, {(out_dir / name).stat().st_size // 1024} KB, voice {VOICE}")
-    return 0
+    print(f"{name}: {meta['length']} s, {(out_dir / name).stat().st_size // 1024} KB, voice {engine}")
 
 
 if __name__ == '__main__':
