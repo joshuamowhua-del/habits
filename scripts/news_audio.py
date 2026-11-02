@@ -9,6 +9,7 @@ Voice: the free open-source Kokoro-82M v1.1-zh model (Apache-2.0), soft male voi
 The model files are downloaded once to ~/.cache/kokoro. Every sentence of every item is read in full.
 Writes news-audio/news-<date>.mp3 and news-audio.js with where each item starts.
 """
+import hashlib
 import json
 import os
 import re
@@ -127,11 +128,13 @@ def main():
 
     out_dir = ROOT / 'news-audio'
     out_dir.mkdir(exist_ok=True)
-    name = f"news-{news['updated']}.mp3"
     with tempfile.TemporaryDirectory() as tmp:
-        w = Path(tmp) / 'all.wav'
+        w, mp3 = Path(tmp) / 'all.wav', Path(tmp) / 'news.mp3'
         sf.write(w, wav, RATE)
-        subprocess.run([ffmpeg(), '-y', '-loglevel', 'error', '-i', str(w), '-ac', '1', '-b:a', '48k', str(out_dir / name)], check=True)
+        subprocess.run([ffmpeg(), '-y', '-loglevel', 'error', '-i', str(w), '-ac', '1', '-b:a', '48k', str(mp3)], check=True)
+        # The content hash is in the name, so phones never replay an older recording they cached for the same day.
+        name = f"news-{news['updated']}-{hashlib.sha1(mp3.read_bytes()).hexdigest()[:8]}.mp3"
+        shutil.move(str(mp3), out_dir / name)
     for old in out_dir.glob('news-*.mp3'):
         if old.name != name:
             old.unlink()
