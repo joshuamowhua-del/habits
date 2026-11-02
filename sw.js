@@ -1,5 +1,5 @@
-const CACHE = 'daily-habits-v5';
-const ASSETS = ['./', './index.html', './styles.css', './app.js', './news.js', './words.js', './travel.js', './travel-prices.js', './manifest.webmanifest',
+const CACHE = 'daily-habits-v6';
+const ASSETS = ['./', './index.html', './styles.css', './app.js', './news.js', './health.js', './words.js', './travel.js', './travel-prices.js', './manifest.webmanifest',
   './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
@@ -15,7 +15,10 @@ self.addEventListener('activate', e => {
 
 // Network first so updates show up immediately; fall back to the cached copy when offline.
 self.addEventListener('fetch', e => {
-  if (e.request.method !== 'GET' || new URL(e.request.url).origin !== location.origin) return;
+  const url = new URL(e.request.url);
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  // Audio needs the browser's own range requests; leave it alone.
+  if (url.pathname.endsWith('.mp3') || e.request.headers.has('range')) return;
   e.respondWith(caches.open(CACHE).then(cache =>
     fetch(e.request, { cache: 'no-cache' })
       .then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; })

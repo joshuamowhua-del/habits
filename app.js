@@ -13,9 +13,8 @@
   const HEAT = ['#f0efec', '#cde2fb', '#9ec5f4', '#5598e7', '#256abf', '#184f95'];
   const ICONS = ['📚', '🚶', '💧', '🧘', '🏃', '🎵', '✍️', '🌙', '🍎', '🧩', '🙏', '📞', '🦷', '🥗', '🎨', '🌿'];
   const TYPES = {
-    minutes: { label: '按时间', desc: '记录做了多少分钟，比如读书', icon: '⏱️' },
     count: { label: '按次数', desc: '比如今天喝了几杯水', icon: '🔢' },
-    check: { label: '每天做一次', desc: '做到了就打个勾', icon: '✅' },
+    check: { label: '每天打卡', desc: '做到了就打个卡，比如读书、散步', icon: '✅' },
   };
   const KINDS = {
     medicine: { label: '药品', icon: '💊' },
@@ -37,7 +36,7 @@
     '有不舒服的地方，记得告诉家里人 📞', '笑一笑，十年少 😄', '吃饭慢一点，细嚼慢咽 🥢',
   ];
   const PRAISE = ['记下啦！睿睿给你点个赞 👍', '真自觉！按时吃药身体棒 💪', '好棒，继续保持 😊', '收到！睿睿都记着呢 📝'];
-  const NEWS_TAG = { '世界焦点': 0, '中美经济': 1, '移民': 2, '国际要闻': 3 };
+  const NEWS_TAG = { '中国大事': 0, '美国大事': 1, '中美关系': 2, 'AI大事': 3, '中国民生': 4, '要闻': 5 };
 
   // ---------- helpers ----------
   const $ = (s, r = document) => r.querySelector(s);
@@ -55,12 +54,7 @@
   const clamp01 = x => Math.max(0, Math.min(1, x));
   const daysBetween = (a, b) => Math.round((parseKey(b) - parseKey(a)) / 864e5);
   const pct = x => Math.round(clamp01(x) * 100);
-  const fmtDur = ms => {
-    const s = Math.max(0, Math.floor(ms / 1000));
-    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-    return h ? `${h}:${pad(m)}:${pad(r)}` : `${pad(m)}:${pad(r)}`;
-  };
-  const unitOf = h => h.type === 'minutes' ? '分钟' : (h.unit || '次');
+  const unitOf = h => h.unit || '次';
   const colorOf = h => COLORS[h.color % COLORS.length];
   const onColorOf = h => ON_COLOR[h.color % COLORS.length];
 
@@ -73,8 +67,8 @@
       v: 1,
       settings: { name: '爸爸妈妈', font: 'large' },
       habits: [
-        h('读书', '📚', 'minutes', 30, '分钟', 0),
-        h('散步', '🚶', 'minutes', 30, '分钟', 1),
+        h('读书', '📚', 'check', 1, '', 0),
+        h('散步', '🚶', 'check', 1, '', 1),
         h('喝水', '💧', 'count', 8, '杯', 2),
         h('早点睡', '🌙', 'check', 1, '', 6),
       ],
@@ -84,9 +78,9 @@
         m('钙片', 'supplement', '1片', ['evening']),
       ],
       log: {},
-      timers: {},
       vocab: { days: {}, next: 0, words: {} },
       travel: { origin: '', people: 2, nights: 7, shift: 0 },
+      health: { days: {}, seen: {}, fav: {} },
       nextColor: 3,
     };
   }
@@ -96,10 +90,16 @@
     s.habits = Array.isArray(s.habits) ? s.habits : [];
     s.meds = Array.isArray(s.meds) ? s.meds : [];
     s.log = s.log || {};
-    s.timers = s.timers || {};
+    // Timed habits ("按时间") became simple check-ins: any minutes logged that day count as done.
+    s.habits.filter(h => h.type === 'minutes').forEach(h => {
+      h.type = 'check'; h.goal = 1; h.unit = '';
+      Object.values(s.log).forEach(l => { if (l.h && l.h[h.id] > 0) l.h[h.id] = 1; });
+    });
+    delete s.timers;
     s.vocab = s.vocab && s.vocab.days ? s.vocab : { days: {}, next: 0, words: {} };
     s.vocab.words = s.vocab.words || {};
     s.travel = Object.assign({ origin: '', people: 2, nights: 7, shift: 0 }, s.travel || {});
+    s.health = Object.assign({ days: {}, seen: {}, fav: {} }, s.health || {});
     if (typeof s.nextColor !== 'number') s.nextColor = s.habits.length % COLORS.length;
     return s;
   }
@@ -134,8 +134,7 @@
       const d = addDays(t, -i), l = { h: {}, m: {} };
       s.habits.forEach(h => {
         const x = rnd();
-        if (h.type === 'minutes') l.h[h.id] = x < 0.15 ? 0 : Math.round((10 + x * 35) / 5) * 5;
-        else if (h.type === 'count') l.h[h.id] = Math.round(3 + x * 6);
+        if (h.type === 'count') l.h[h.id] = Math.round(3 + x * 6);
         else l.h[h.id] = x > 0.3 ? 1 : 0;
       });
       s.meds.forEach(m => {
@@ -208,12 +207,14 @@
   // One flower per habit that hits its goal and per medicine fully taken that day.
   function flowersOn(day) {
     const st = stats(day);
-    return st.hDone + st.ms.filter(m => m.slots.every(s => mt(day, m.id, s))).length + (vocabDone(day) ? 1 : 0);
+    return st.hDone + st.ms.filter(m => m.slots.every(s => mt(day, m.id, s))).length + (vocabDone(day) ? 1 : 0)
+      + (S.health.days[day] && S.health.days[day].read ? 1 : 0);
   }
 
   function totalFlowers() {
     const t = todayKey();
-    return Object.keys(S.log).filter(d => d <= t).reduce((a, d) => a + flowersOn(d), 0);
+    const days = new Set([...Object.keys(S.log), ...Object.keys(S.vocab.days), ...Object.keys(S.health.days)]);
+    return [...days].filter(d => d <= t).reduce((a, d) => a + flowersOn(d), 0);
   }
 
   function levelOf(n) {
@@ -227,7 +228,7 @@
   // ---------- ui state ----------
   const ui = {
     view: 'today', day: todayKey(), trend: 'week', month: todayKey().slice(0, 7), enter: true, pop: null,
-    ruiText: '', ruiFresh: true, ruiTap: 0, vocabDay: null, vocabQuiz: false,
+    ruiText: '', ruiFresh: true, ruiTap: 0, vocabDay: null, vocabQuiz: false, newsAll: false, healthCat: 'all', docText: '',
   };
   const lastP = {};
   const lastCount = {};
@@ -263,7 +264,7 @@
     document.documentElement.dataset.font = S.settings.font === 'xl' ? 'xl' : 'large';
     animIndex = 0;
     const main = $('#main');
-    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'vocab' ? viewVocab() : ui.view === 'travel' ? viewTravel() : ui.view === 'trends' ? viewTrends() : viewSettings();
+    main.innerHTML = ui.view === 'today' ? viewToday() : ui.view === 'vocab' ? viewVocab() : ui.view === 'travel' ? viewTravel() : ui.view === 'health' ? viewHealth() : ui.view === 'trends' ? viewTrends() : viewSettings();
     main.classList.toggle('enter', ui.enter && !reduced);
     ui.enter = false;
     $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.view === ui.view));
@@ -303,11 +304,17 @@
 
   // ---------- 睿睿 (the little helper) ----------
   function ruiSVG(extra = '', mood = '') {
-    const travel = mood === 'travel';
+    const travel = mood === 'travel', doc = mood === 'doctor';
     return `<svg class="rui ${extra}" viewBox="0 0 120 142" aria-hidden="true">
       <ellipse cx="60" cy="137" rx="30" ry="4.5" fill="#000" opacity=".08"/>
-      <path d="M28 134 Q28 99 60 99 Q92 99 92 134 Z" fill="${travel ? '#24407a' : '#2a78d6'}"/>
-      <path d="M49 100 L60 113 L71 100 Z" fill="#fff"/>
+      <path d="M28 134 Q28 99 60 99 Q92 99 92 134 Z" fill="${travel ? '#24407a' : doc ? '#fff' : '#2a78d6'}" ${doc ? 'stroke="#c9d3de" stroke-width="2"' : ''}/>
+      <path d="M49 100 L60 113 L71 100 Z" fill="${doc ? '#bcd8f7' : '#fff'}"/>
+      ${doc ? `<path d="M48 100.5 L55 121 L60 113 L65 121 L72 100.5" stroke="#c9d3de" stroke-width="2.2" fill="none" stroke-linejoin="round"/>
+        <rect x="69" y="119" width="13" height="11" rx="2" fill="#f4f7fa" stroke="#c9d3de" stroke-width="1.8"/>
+        <path d="M75.5 121.5 v6 M72.5 124.5 h6" stroke="#e34948" stroke-width="2.4" stroke-linecap="round"/>
+        <path d="M47 101 Q38 113 43 122 Q47 128 52 125" stroke="#3f4a5a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <path d="M73 101 Q74 112 64 120 Q59 124 55 125" stroke="#3f4a5a" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        <circle cx="53.5" cy="126" r="4.6" fill="#d9e0e8" stroke="#3f4a5a" stroke-width="2.2"/><circle cx="52.3" cy="124.8" r="1.3" fill="#fff"/>` : ''}
       ${travel ? `<path d="M52 103 L60 107 L52 111 Z M68 103 L60 107 L68 111 Z" fill="#e34948"/><circle cx="60" cy="107" r="2.4" fill="#c43535"/>
         <circle cx="60" cy="121" r="2.2" fill="#f2c14e"/><circle cx="60" cy="129" r="2.2" fill="#f2c14e"/>
         <g transform="rotate(-6 22 124)"><rect x="8" y="112" width="26" height="22" rx="5" fill="#eb6834"/><rect x="16" y="106" width="10" height="7" rx="3" fill="none" stroke="#a8401a" stroke-width="2.5"/>
@@ -328,6 +335,9 @@
         <path d="M56.5 60 Q60 57 63.5 60" stroke="#3a3a3a" stroke-width="3" fill="none"/>
         <ellipse cx="37" cy="77" rx="6" ry="3.5" fill="#ff9a9a" opacity=".6"/><ellipse cx="83" cy="77" rx="6" ry="3.5" fill="#ff9a9a" opacity=".6"/>
         <path class="mouth" d="M51 79 Q60 88 69 79" stroke="#8a3a2a" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+        ${doc ? `<path d="M23 47 Q60 31 97 47" stroke="#4a5563" stroke-width="3.2" fill="none" stroke-linecap="round"/>
+          <circle cx="60" cy="31" r="10" fill="#e9eff5" stroke="#8994a3" stroke-width="2.6"/><circle cx="60" cy="31" r="3.4" fill="#4a5563"/>
+          <path d="M54 27 Q56 24 59.5 23.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round"/>` : ''}
         ${travel ? `<path d="M20 40 Q22 12 60 10 Q98 12 100 40 Z" fill="#24407a"/><rect x="18" y="36" width="84" height="7" rx="3.5" fill="#1b3160"/>
           <path d="M14 42 Q60 54 106 42 L104 47 Q60 58 16 47 Z" fill="#14264d"/>
           <circle cx="60" cy="25" r="6" fill="#f2c14e"/><path d="M56 25 l3 3 5-6" stroke="#24407a" stroke-width="1.8" fill="none" stroke-linecap="round"/>` : ''}
@@ -372,6 +382,10 @@
     if (S.travel.origin && Math.random() < 0.25) {
       const r = rankPlans();
       if (r.plans[0]) return `旅行管家睿睿推荐：${r.month} 月去「${r.plans[0].d.name}」度假，${r.dates.nights} 晚两个人约 ${money(r.plans[0].total)}，去「旅行」看看 🧳`;
+    }
+    if (HT.length && Math.random() < 0.25) {
+      const x = HT[Math.floor(Math.random() * HT.length)];
+      return `睿睿医生提醒：${x.t} 🩺`;
     }
     const v = WD.length ? vocabDay(todayKey(), true) : null;
     if (v && Math.random() < 0.5) {
@@ -434,28 +448,212 @@
     const N = window.NEWS;
     if (!N || !Array.isArray(N.items) || !N.items.length) {
       return `<section class="card news ${A()}" id="news"><div class="card-title">📰 睿睿播报</div>
-        <p class="card-sub" style="margin-top:6px">今天的新闻还没准备好，发布以后每天早上会自动更新。</p></section>`;
+        <p class="card-sub" style="margin-top:6px">今天的新闻还没准备好，每天会自动更新。</p></section>`;
     }
     const days = Math.round((parseKey(todayKey()) - parseKey(N.updated)) / 864e5);
     const when = days <= 0 ? '今天更新' : days === 1 ? '昨天更新' : `${fmtDate(N.updated)}更新 · 有点旧了`;
+    const a = newsAudio(), many = N.items.length > 4;
+    const shown = many && !ui.newsAll ? N.items.slice(0, 4) : N.items;
     return `<section class="card news ${A()}" id="news">
-      <div class="card-title">📰 睿睿播报 · 今日三条新闻</div>
-      <div class="card-sub">${when} · 来源：BBC中文、德国之声、法广</div>
-      ${N.items.map(n => `<article class="news-item">
-        <span class="news-tag tag-${NEWS_TAG[n.tag] ?? 3}">${esc(n.tag)}</span>
+      <div class="card-title">📰 睿睿播报 · 今日 ${N.items.length} 条新闻</div>
+      <div class="card-sub">${when} · 来源：${esc((N.sources || ['BBC中文', '德国之声', '法广']).join('、'))}</div>
+      <button class="btn btn-primary btn-wide news-play" data-action="news-play" data-i="0">▶ 听睿睿播报全部新闻
+        ${a ? `<small>约 ${Math.max(1, Math.round(a.length / 60))} 分钟 · 屏幕灭了也能接着听</small>` : ''}</button>
+      ${shown.map((n, i) => `<article class="news-item ${playerOn && playing === i ? 'playing' : ''}" data-i="${i}">
+        <span class="news-tag tag-${NEWS_TAG[n.tag] ?? 5}">${esc(n.tag)}</span>
         <h3>${esc(n.title)}</h3>
         ${n.summary ? `<p>${esc(n.summary)}</p>` : ''}
         <div class="news-meta">${esc(n.source)}${n.time ? ' · ' + esc(n.time) : ''}${/^https?:\/\//.test(n.link || '') ? `<a href="${esc(n.link)}" target="_blank" rel="noopener">看原文 ›</a>` : ''}</div>
+        <button class="link-btn news-from" data-action="news-play" data-i="${i}">▶ 从这条开始听</button>
       </article>`).join('')}
-      <button class="btn btn-outline btn-wide" data-action="news-speak">🔊 让睿睿读新闻</button>
+      ${many ? `<button class="btn btn-outline btn-wide" data-action="news-all">${ui.newsAll ? '收起 ⌃' : `展开全部 ${N.items.length} 条新闻 ⌄`}</button>` : ''}
     </section>`;
   }
 
-  function newsScript() {
+  function newsScript(from = 0) {
     const N = window.NEWS;
     if (!N || !N.items) return '';
-    const nums = ['第一条', '第二条', '第三条', '第四条'];
-    return `睿睿播报，今天的新闻。` + N.items.map((n, i) => `${nums[i] || ''}，${n.tag}：${n.title}。${n.summary || ''}`).join(' ');
+    const nums = '一二三四五六七八九十';
+    return (from ? '' : `睿睿播报，今天的新闻。`) + N.items.slice(from).map((n, i) => `第${nums[from + i] || from + i + 1}条，${n.tag}：${n.title}。${n.summary || ''}`).join(' ');
+  }
+
+  // ---------- news player ----------
+  // iPhone stops speechSynthesis when the screen locks, so the news is recorded as an MP3 every day
+  // (scripts/news_audio.py). A real audio file keeps playing in the background and shows on the lock screen.
+  let audio = null, playerOn = false, playing = -1;
+  const newsAudio = () => {
+    const N = window.NEWS, a = window.NEWS_AUDIO;
+    return N && a && a.date === N.updated && a.count === N.items.length ? a : null;
+  };
+  const chapterAt = t => { const a = newsAudio(); let k = 0; if (a) a.starts.forEach((s, i) => { if (t >= s - 0.3) k = i; }); return k; };
+
+  function newsPlay(i = 0) {
+    const a = newsAudio();
+    if (!a) {
+      const t = newsScript(i);
+      if (!t) { toast('今天的新闻还没准备好'); return; }
+      speak(t);
+      toast('今天的录音还没好，先用手机朗读（屏幕灭了会停）');
+      return;
+    }
+    if ('speechSynthesis' in window) speechSynthesis.cancel();
+    if (!audio) {
+      audio = new Audio();
+      audio.preload = 'auto';
+      ['play', 'pause', 'timeupdate', 'loadedmetadata'].forEach(ev => audio.addEventListener(ev, updatePlayer));
+      audio.addEventListener('ended', () => { playerOn = false; updatePlayer(); toast('今天的新闻播完啦 👋'); });
+      audio.addEventListener('error', () => { if (playerOn) toast('录音加载不了，连上网再试试'); });
+      mediaHandlers();
+    }
+    const url = new URL(a.file, location.href).href, at = i ? a.starts[i] : 0;
+    if (audio.src !== url) {
+      audio.src = url;
+      audio.addEventListener('loadedmetadata', () => { audio.currentTime = at; }, { once: true });
+    } else audio.currentTime = at;
+    playerOn = true;
+    playing = -1;
+    audio.play().catch(() => toast('播放不了，连上网再试试'));
+    updatePlayer();
+  }
+
+  function jumpNews(d) {
+    const a = newsAudio();
+    if (!a || !audio) return;
+    const k = chapterAt(audio.currentTime);
+    // "Previous" first goes back to the start of the current item, like a music player.
+    const to = d < 0 && audio.currentTime - a.starts[k] > 4 ? k : Math.max(0, Math.min(a.count - 1, k + d));
+    audio.currentTime = a.starts[to];
+    if (audio.paused) audio.play().catch(() => {});
+  }
+
+  function mediaHandlers() {
+    if (!('mediaSession' in navigator)) return;
+    const set = (k, f) => { try { navigator.mediaSession.setActionHandler(k, f); } catch (e) { /* not supported */ } };
+    set('play', () => audio.play());
+    set('pause', () => audio.pause());
+    set('previoustrack', () => jumpNews(-1));
+    set('nexttrack', () => jumpNews(1));
+  }
+
+  function updatePlayer() {
+    const bar = $('#player'), a = newsAudio(), N = window.NEWS;
+    if (!bar) return;
+    const on = playerOn && audio && a;
+    bar.hidden = !on;
+    document.body.classList.toggle('has-player', !!on);
+    if (!on) { playing = -1; $$('.news-item.playing').forEach(el => el.classList.remove('playing')); return; }
+    if (!bar.firstChild) {
+      bar.innerHTML = `<div class="pl-head"><div class="pl-title" id="pl-title"></div><button class="pl-x" data-pl="close" aria-label="关掉播放">✕</button></div>
+        <div class="pl-track"><div class="pl-fill" id="pl-fill"></div></div>
+        <div class="pl-btns"><button data-pl="-1">‹ 上一条</button><button class="pl-main" data-pl="toggle" id="pl-toggle"></button><button data-pl="1">下一条 ›</button></div>`;
+    }
+    const k = chapterAt(audio.currentTime);
+    if (k !== playing) {
+      playing = k;
+      $('#pl-title').textContent = `🔊 第 ${k + 1} / ${a.count} 条 · ${N.items[k].tag}`;
+      $$('.news-item').forEach(el => el.classList.toggle('playing', +el.dataset.i === k));
+      if ('mediaSession' in navigator && window.MediaMetadata) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: `第${k + 1}条 · ${N.items[k].title}`, artist: '睿睿播报', album: '每日好习惯',
+          artwork: [{ src: new URL('icons/icon-512.png', location.href).href, sizes: '512x512', type: 'image/png' }],
+        });
+      }
+    }
+    $('#pl-toggle').textContent = audio.paused ? '继续听' : '暂停';
+    $('#pl-fill').style.width = pct(audio.currentTime / (audio.duration || a.length)) + '%';
+  }
+
+  // ---------- 养生 (睿睿医生) ----------
+  const HT = window.HEALTH || [], HC = window.HEALTH_CATS || {};
+  const tipById = id => HT.find(x => x.id === id);
+  const hashStr = s => { let h = 7; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
+
+  // Three tips a day, picked the first time the day is opened and kept: never-shown first, in-season first,
+  // out-of-season ones (watermelon in winter) last, and from different categories.
+  function healthDay(day, create) {
+    let h = S.health.days[day];
+    if (!h && create && HT.length) {
+      const month = parseKey(day).getMonth() + 1;
+      const season = x => (!x.m ? 0 : x.m.includes(month) ? 1 : -1);
+      const list = HT.slice().sort((a, b) => (season(a) < 0) - (season(b) < 0)
+        || (S.health.seen[a.id] || 0) - (S.health.seen[b.id] || 0)
+        || season(b) - season(a) || hashStr(day + a.id) - hashStr(day + b.id));
+      const ids = [];
+      list.forEach(x => { if (ids.length < 3 && !ids.some(id => tipById(id).c === x.c)) ids.push(x.id); });
+      list.forEach(x => { if (ids.length < 3 && !ids.includes(x.id)) ids.push(x.id); });
+      ids.forEach(id => { S.health.seen[id] = (S.health.seen[id] || 0) + 1; });
+      h = S.health.days[day] = { ids, read: false };
+      save();
+    }
+    return h || null;
+  }
+
+  function docLine(h) {
+    const who = callName();
+    if (!h) return `我是睿睿医生 🩺`;
+    if (h.read) return `今天的小知识${who}都学会啦，真棒！明天睿睿医生再来讲新的 🩺`;
+    return `${who}好！我是睿睿医生 🩺 今天讲 3 个健康小知识，第一个：${tipById(h.ids[0]).q}`;
+  }
+
+  function tipBody(x) {
+    return `<p class="tip-a">${esc(x.a)}</p><div class="tip-t"><b>睿睿医生建议：</b>${esc(x.t)}</div>`;
+  }
+
+  function tipTools(x) {
+    const fav = !!S.health.fav[x.id];
+    return `<button class="say-btn" data-action="tip-say" data-id="${x.id}" aria-label="读给我听">🔊</button>
+      <button class="say-btn ${fav ? 'fav-on' : ''}" data-action="tip-fav" data-id="${x.id}" aria-label="${fav ? '取消收藏' : '收藏'}">${fav ? '⭐' : '☆'}</button>`;
+  }
+
+  function tipCard(x, num) {
+    const c = HC[x.c] || {};
+    return `<article class="card tip-card ${A()}">
+      <div class="tip-top"><span class="tip-cat">${c.icon || ''} ${esc(c.name || '')}</span><span class="grow"></span>${tipTools(x)}</div>
+      <h3 class="tip-q">${num ? `<span class="tip-num">${num}</span>` : ''}${esc(x.q)}</h3>${tipBody(x)}
+    </article>`;
+  }
+
+  function tipRow(x) {
+    const c = HC[x.c] || {};
+    return `<details class="card tip-row"><summary><span class="tip-ic">${c.icon || '🩺'}</span><span class="grow">${esc(x.q)}</span><span class="chev">›</span></summary>
+      <div class="tip-open">${tipBody(x)}<div class="tip-top" style="margin-top:10px"><span class="grow"></span>${tipTools(x)}</div></div></details>`;
+  }
+
+  function healthTodayCard() {
+    const h = healthDay(todayKey(), true);
+    if (!h) return '';
+    return `<section class="card health-today ${A()}">
+      <div class="habit-top"><div class="mini-doc">${ruiSVG('', 'doctor')}</div>
+        <div class="habit-info"><div class="habit-name">今日养生</div><div class="habit-val">${esc(tipById(h.ids[0]).q)}</div></div>
+        ${h.read ? '<span class="chip-done">✓ 学过了</span>' : ''}</div>
+      <div class="habit-actions"><button class="btn btn-health btn-wide" data-action="tab" data-view="health">🩺 看今天的 3 个小知识</button></div>
+    </section>`;
+  }
+
+  function viewHealth() {
+    let html = `<header class="page-head"><h1>🩺 养生小知识</h1><p>睿睿医生每天讲 3 个，自动更新</p></header>`;
+    if (!HT.length) return html + `<div class="card empty"><div class="e-title">小知识还没加载出来</div><div class="e-text">联网后重新打开试试</div></div>`;
+    const t = todayKey(), h = healthDay(t, true);
+    html += `<section class="card rui-card doctor-card ${A()}">
+      <div class="rui-row">
+        <button class="rui-btn" data-action="doc-talk" aria-label="点点睿睿医生">${ruiSVG('', 'doctor')}</button>
+        <div class="bubble"><div class="bubble-text" id="doc-text">${esc(ui.docText || docLine(h))}</div><div class="bubble-hint">点点睿睿医生，它会再讲一个</div></div>
+      </div>
+    </section>
+    <h2 class="sec-title ${A()}">🌿 今天的小知识<span class="sec-note">${fmtDate(t)}</span></h2>
+    ${h.ids.map((id, k) => tipCard(tipById(id), k + 1)).join('')}
+    ${h.read ? `<button class="btn btn-done btn-wide ${A()}" data-action="tab" data-view="today">✓ 今天学过啦 · 🌸 +1</button>`
+      : `<button class="btn btn-health btn-wide ${A()}" data-action="health-read">✓ 我都看完了，学到了！</button>`}`;
+    const favs = HT.filter(x => S.health.fav[x.id]);
+    if (favs.length) html += `<h2 class="sec-title ${A()}">⭐ 我的收藏<span class="sec-note">${favs.length} 条</span></h2>${favs.map(tipRow).join('')}`;
+    const cat = HC[ui.healthCat] ? ui.healthCat : 'all';
+    const list = HT.filter(x => cat === 'all' || x.c === cat);
+    html += `<h2 class="sec-title ${A()}">📚 全部小知识<span class="sec-note">${HT.length} 条</span></h2>
+      <div class="chips ${A()}">${[['all', '全部', '📚'], ...Object.entries(HC).map(([k, c]) => [k, c.name, c.icon])].map(([k, n, i]) =>
+        `<button class="chip ${k === cat ? 'on' : ''}" data-action="health-cat" data-cat="${k}">${i} ${n}</button>`).join('')}</div>
+      ${list.map(tipRow).join('')}
+      <p class="foot-note">小知识只作参考，不能代替医生。身体不舒服，请及时去医院。</p>`;
+    return html;
   }
 
   // ---------- vocabulary ----------
@@ -1041,6 +1239,7 @@
       : emptyCard('⭐', '还没有添加习惯', '比如读书、散步、喝水', '去添加习惯', 'add-habit');
 
     html += `<h2 class="sec-title ${A()}">📖 每天10个单词</h2>` + vocabTodayCard();
+    if (isToday) html += `<h2 class="sec-title ${A()}">🩺 每日养生</h2>` + healthTodayCard();
     html += newsCard();
     html += `<p class="foot-note">数据只保存在这台手机上 · 记得偶尔在「设置」里备份</p>`;
     return html;
@@ -1091,31 +1290,19 @@
   function habitCard(day, h, isToday) {
     const v = hv(day, h.id), p = clamp01(v / h.goal), done = v >= h.goal;
     const c = colorOf(h), unit = esc(unitOf(h));
-    const timer = S.timers[h.id];
     const value = h.type === 'check'
       ? (done ? '做到了 👏' : '还没做')
       : `<b>${v}</b> / ${h.goal} ${unit}`;
     let actions = '', edit = '';
-    if (h.type === 'minutes') {
-      if (timer && isToday) {
-        actions = `<div class="timer-box"><div class="timer-label">⏱️ 正在计时</div>
-          <div class="timer-display" data-timer="${h.id}">${fmtDur(Date.now() - timer)}</div>
-          <button class="btn btn-primary btn-wide" data-action="timer-stop" data-id="${h.id}">⏹ 停止并记录</button></div>`;
-      } else {
-        actions = `<div class="quick">${[5, 10, 15].map(n =>
-          `<button class="btn btn-soft" data-action="habit-add" data-id="${h.id}" data-n="${n}">+${n}<small>分钟</small></button>`).join('')}</div>` +
-          (isToday ? `<button class="btn btn-primary btn-wide" data-action="timer-start" data-id="${h.id}">▶ 开始计时</button>` : '');
-      }
-      edit = `<button class="link-btn" data-action="habit-set" data-id="${h.id}">记错了？修改数字</button>`;
-    } else if (h.type === 'count') {
+    if (h.type === 'count') {
       actions = `<div class="quick">
         <button class="btn btn-soft" data-action="habit-add" data-id="${h.id}" data-n="-1" aria-label="减一">－1</button>
         <button class="btn btn-primary grow" data-action="habit-add" data-id="${h.id}" data-n="1">＋1 ${unit}</button></div>`;
       edit = `<button class="link-btn" data-action="habit-set" data-id="${h.id}">修改数字</button>`;
     } else {
       actions = done
-        ? `<button class="btn btn-done btn-wide" data-action="habit-check" data-id="${h.id}">✓ 今天做到了</button>`
-        : `<button class="btn btn-primary btn-wide" data-action="habit-check" data-id="${h.id}">✓ 我做到了</button>`;
+        ? `<button class="btn btn-done btn-wide" data-action="habit-check" data-id="${h.id}">✓ ${isToday ? '今天' : '这天'}打过卡了</button>`
+        : `<button class="btn btn-primary btn-wide" data-action="habit-check" data-id="${h.id}">✓ ${isToday ? '我做到了，打卡' : '这天做了，补打卡'}</button>`;
     }
     return `<div class="card habit ${done ? 'done' : ''} ${ui.pop === h.id ? 'pop' : ''} ${A()};--c:${c};--on:${onColorOf(h)}">
       <div class="habit-top">
@@ -1553,10 +1740,10 @@
   function openSetValue(h) {
     const day = ui.day;
     let v = hv(day, h.id);
-    const step = h.type === 'minutes' ? 5 : 1;
+    const step = 1;
     openModal({
       title: `修改${h.name}`,
-      body: `<p>${fmtDate(day)}一共${h.type === 'minutes' ? '做了多少分钟' : '多少' + esc(unitOf(h))}？</p>
+      body: `<p>${fmtDate(day)}一共多少${esc(unitOf(h))}？</p>
         <div class="stepper" style="justify-content:center;margin:18px 0 8px">
           <button type="button" data-st="-1" aria-label="减少">－</button>
           <span class="sv" id="sv">${v}</span><span class="su">${esc(unitOf(h))}</span>
@@ -1572,7 +1759,7 @@
 
   function openHabitForm(h) {
     const isNew = !h;
-    const f = h ? Object.assign({}, h) : { name: '', icon: ICONS[0], type: 'minutes', goal: 30, unit: '次', color: S.nextColor % COLORS.length };
+    const f = h ? Object.assign({}, h) : { name: '', icon: ICONS[0], type: 'check', goal: 1, unit: '次', color: S.nextColor % COLORS.length };
     const body = `
       <label class="f-label" for="f-name">叫什么名字</label>
       <input class="f-input" id="f-name" maxlength="16" placeholder="例如：读书、散步、喝水" value="${esc(f.name)}">
@@ -1584,7 +1771,7 @@
       <div id="f-goal-wrap"><label class="f-label">每天的目标</label>
         <div class="stepper"><button type="button" data-step="-1" aria-label="减少">－</button><span class="sv" id="f-goal">${f.goal}</span><span class="su" id="f-goal-unit"></span><button type="button" data-step="1" aria-label="增加">＋</button></div></div>
       <div id="f-unit-wrap"><label class="f-label" for="f-unit">单位</label>
-        <input class="f-input" id="f-unit" maxlength="4" placeholder="例如：杯、次、页" value="${esc(f.unit === '分钟' ? '次' : f.unit)}"></div>
+        <input class="f-input" id="f-unit" maxlength="4" placeholder="例如：杯、次、页" value="${esc(f.unit || '次')}"></div>
       <label class="f-label">颜色</label>
       <div class="color-row">${COLORS.map((c, i) => `<button type="button" class="color-opt ${i === f.color ? 'on' : ''}" data-color="${i}" style="background:${c}" aria-label="颜色 ${i + 1}"></button>`).join('')}</div>
       ${isNew ? '' : '<div class="btn-stack" style="margin-top:22px"><button type="button" class="btn btn-danger btn-wide" id="f-del">删除这个习惯</button></div>'}`;
@@ -1593,7 +1780,7 @@
       $('#f-goal-wrap', root).hidden = f.type === 'check';
       $('#f-unit-wrap', root).hidden = f.type !== 'count';
       $('#f-goal', root).textContent = f.goal;
-      $('#f-goal-unit', root).textContent = f.type === 'minutes' ? '分钟' : ($('#f-unit', root).value.trim() || '次');
+      $('#f-goal-unit', root).textContent = $('#f-unit', root).value.trim() || '次';
     };
 
     openModal({
@@ -1606,7 +1793,7 @@
           const data = {
             name, icon: f.icon, type: f.type, color: f.color,
             goal: f.type === 'check' ? 1 : Math.max(1, f.goal),
-            unit: f.type === 'minutes' ? '分钟' : f.type === 'count' ? ($('#f-unit', root).value.trim() || '次') : '',
+            unit: f.type === 'count' ? ($('#f-unit', root).value.trim() || '次') : '',
           };
           if (isNew) {
             S.habits.push(Object.assign({ id: uid(), created: todayKey() }, data));
@@ -1628,13 +1815,12 @@
           if (b.dataset.color) { f.color = +b.dataset.color; $$('.color-opt', root).forEach(x => x.classList.toggle('on', x === b)); }
           if (b.dataset.type && b.dataset.type !== f.type) {
             f.type = b.dataset.type;
-            f.goal = f.type === 'minutes' ? 30 : f.type === 'count' ? 8 : 1;
+            f.goal = f.type === 'count' ? 8 : 1;
             $$('.opt', root).forEach(x => x.classList.toggle('on', x === b));
             sync(root);
           }
           if (b.dataset.step) {
-            const step = f.type === 'minutes' ? 5 : 1;
-            f.goal = Math.max(step, Math.min(f.type === 'minutes' ? 600 : 99, f.goal + step * +b.dataset.step));
+            f.goal = Math.max(1, Math.min(99, f.goal + +b.dataset.step));
             sync(root);
           }
           if (b.id === 'f-del') {
@@ -1709,7 +1895,6 @@
     const used = Object.values(S.log).some(l => (l.h && l.h[id]) || (l.m && l.m[id] && Object.keys(l.m[id]).length));
     if (it.created >= t && !used) list.splice(list.indexOf(it), 1);
     else it.archived = t;
-    delete S.timers[id];
   }
 
   function openDayDetail(day) {
@@ -1789,20 +1974,6 @@
         else setHabitValue(day, h, 1);
         break;
       }
-      case 'timer-start':
-        S.timers[id] = Date.now(); save(); render();
-        toast('⏱️ 开始计时了，做完点「停止」');
-        break;
-      case 'timer-stop': {
-        const h = getHabit(id), ms = Date.now() - (S.timers[id] || Date.now());
-        delete S.timers[id];
-        const min = ms >= 30000 ? Math.max(1, Math.round(ms / 60000)) : 0;
-        if (!min) { save(); render(); toast('时间太短，这次没有记录'); break; }
-        const day = todayKey(), old = hv(day, id);
-        setHabitValue(day, h, old + min);
-        toast(`${h.icon} 记好了：${h.name} ${min} 分钟`, () => { dayLog(day).h[id] = old; save(); render(); });
-        break;
-      }
       case 'day-prev': ui.day = addDays(ui.day, -1); ui.ruiFresh = true; render(); break;
       case 'day-next': if (ui.day < todayKey()) { ui.day = addDays(ui.day, 1); ui.ruiFresh = true; render(); } break;
       case 'day-today': ui.day = todayKey(); ui.ruiFresh = true; render(); break;
@@ -1841,7 +2012,35 @@
       }
       case 'rui-speak': speak(ui.ruiText); break;
       case 'go-news': { const n = $('#news'); if (n) n.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' }); break; }
-      case 'news-speak': { const t = newsScript(); if (t) speak(t); else toast('今天的新闻还没准备好'); break; }
+      case 'news-play': newsPlay(+el.dataset.i || 0); break;
+      case 'news-all': {
+        ui.newsAll = !ui.newsAll; render();
+        const n = $('#news'); if (n && !ui.newsAll) n.scrollIntoView({ block: 'start' });
+        break;
+      }
+      case 'health-read': {
+        const h = healthDay(todayKey(), true), f0 = totalFlowers();
+        h.read = true; save(); render(); scrollTo(0, 0);
+        const lv0 = levelOf(f0), lv1 = levelOf(totalFlowers());
+        confetti(true);
+        cheer(lv1.i > lv0.i ? lv1.icon : '🩺', lv1.i > lv0.i ? `升级啦！「${lv1.name}」` : '学到了！小红花 +1 🌸');
+        break;
+      }
+      case 'health-cat': ui.healthCat = el.dataset.cat; { const y = scrollY; render(); scrollTo(0, y); } break;
+      case 'tip-say': { const x = tipById(id); if (x) speak(`${x.q}。${x.a}。睿睿医生建议：${x.t}`); break; }
+      case 'tip-fav': {
+        if (S.health.fav[id]) delete S.health.fav[id]; else { S.health.fav[id] = todayKey(); toast('⭐ 收藏好了，在「养生」最下面能找到'); }
+        save(); { const y = scrollY; render(); scrollTo(0, y); }
+        break;
+      }
+      case 'doc-talk': {
+        const x = HT[Math.floor(Math.random() * HT.length)];
+        ui.docText = `${x.q} —— ${x.t}`;
+        const b = $('#doc-text'); if (b) b.textContent = ui.docText;
+        const svg = el.querySelector('.rui'); if (svg) { svg.classList.remove('talk'); void svg.getBoundingClientRect(); svg.classList.add('talk'); }
+        speak(ui.docText);
+        break;
+      }
       case 'set-font': S.settings.font = el.dataset.font; save(); render(); break;
       case 'add-habit': openHabitForm(null); break;
       case 'edit-habit': openHabitForm(getHabit(id)); break;
@@ -1872,11 +2071,6 @@
     }
   });
 
-  // Running timers tick without a full re-render.
-  setInterval(() => {
-    $$('[data-timer]').forEach(el => { const s = S.timers[el.dataset.timer]; if (s) el.textContent = fmtDur(Date.now() - s); });
-  }, 1000);
-
   // Coming back after midnight: move "today" forward if the user was on today.
   let lastToday = todayKey();
   document.addEventListener('visibilitychange', () => {
@@ -1902,6 +2096,15 @@
     navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(r => r.update()).catch(() => {});
   }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+
+  $('#player').addEventListener('click', e => {
+    const b = e.target.closest('[data-pl]');
+    if (!b || !audio) return;
+    const k = b.dataset.pl;
+    if (k === 'toggle') { if (audio.paused) audio.play().catch(() => {}); else audio.pause(); }
+    else if (k === 'close') { audio.pause(); playerOn = false; updatePlayer(); }
+    else jumpNews(+k);
+  });
 
   document.addEventListener('touchstart', () => {}, { passive: true }); // lets :active styles show on iPhone
   render();

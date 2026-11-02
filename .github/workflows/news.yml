@@ -1,8 +1,9 @@
-# Refreshes news.js every morning (US Pacific ~6am) once the site is on GitHub Pages.
+# Refreshes news.js twice a day (about 6:00 and 18:00 Beijing time); the pages job then re-records the audio.
 name: daily-news
 on:
   schedule:
-    - cron: '0 13 * * *'
+    - cron: '0 22 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 permissions:
   contents: write
@@ -11,10 +12,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: TZ=America/Los_Angeles python3 scripts/update_news.py
+      - run: TZ=Asia/Shanghai python3 scripts/update_news.py
       - run: |
           git config user.name "news-bot"
           git config user.email "news-bot@users.noreply.github.com"
           git add news.js
-          git diff --cached --quiet || git commit -m "daily news $(date +%F)"
+          git diff --cached --quiet || git commit -m "daily news $(TZ=Asia/Shanghai date '+%F %H:%M')"
           git pull --rebase -q && git push
