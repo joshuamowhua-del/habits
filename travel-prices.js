@@ -2,10 +2,10 @@
 window.TRAVEL_PRICES = {
  "routes": {
   "SHA-BHY": {
-   "price": 6300,
-   "airline": "南航",
-   "stops": 1,
-   "time": "17:50",
+   "price": 2360,
+   "airline": "吉祥航空",
+   "stops": 0,
+   "time": "08:35",
    "from": "PVG",
    "depart": "2027-02-23",
    "ret": "2027-03-02",
@@ -88,6 +88,11 @@ window.TRAVEL_PRICES = {
     {
      "d": "2026-11-17",
      "p": 6300,
+     "dep": "2027-02-23"
+    },
+    {
+     "d": "2026-11-18",
+     "p": 2360,
      "dep": "2027-02-23"
     }
    ]
@@ -183,6 +188,11 @@ window.TRAVEL_PRICES = {
     },
     {
      "d": "2026-11-17",
+     "p": 8040,
+     "dep": "2027-02-23"
+    },
+    {
+     "d": "2026-11-18",
      "p": 8040,
      "dep": "2027-02-23"
     }
@@ -285,6 +295,6 @@ window.TRAVEL_PRICES = {
    ]
   }
  },
- "updated": "2026-11-17",
+ "updated": "2026-11-18",
  "origin": "SHA"
 };
